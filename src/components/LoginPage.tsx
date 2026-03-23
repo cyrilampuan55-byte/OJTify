@@ -141,6 +141,9 @@ const LoginPage: React.FC = () => {
             >
               {isRegister ? 'Already have an account? Sign in' : "Don't have an account? Register"}
             </button>
+            <h3 className="text-3xl font-bold text-white tracking-tight">
+              Developed by:<span className="text-cyan-400">Cyril Ampuan</span>
+            </h3>
           </div>
         </div>
       </div>

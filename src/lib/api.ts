@@ -340,6 +340,12 @@ export const api = {
     return { settings: await getSettingsForUser(profile.id) };
   },
 
+  getUserSettings: async (userId: string) => {
+    const { profile } = await requireProfile();
+    const targetUserId = profile.role === 'admin' ? userId : profile.id;
+    return { settings: await getSettingsForUser(targetUserId) };
+  },
+
   saveSettings: async (settings: Record<string, any>) => {
     const { profile } = await requireProfile();
     const payload = {
@@ -356,6 +362,42 @@ export const api = {
     if (error) throw error;
     await supabase.from('profiles').update({ target_hours: payload.target_hours }).eq('id', profile.id);
     await syncNotificationsForProfile({ ...profile, target_hours: payload.target_hours });
+    return { success: true, settings: data };
+  },
+
+  saveUserSettings: async (userId: string, settings: Record<string, any>) => {
+    const { profile } = await requireProfile();
+    const targetUserId = profile.role === 'admin' ? userId : profile.id;
+    const targetProfile =
+      profile.role === 'admin' && targetUserId !== profile.id
+        ? await supabase
+            .from('profiles')
+            .select('id, name, email, role, target_hours')
+            .eq('id', targetUserId)
+            .single()
+        : { data: profile, error: null };
+
+    if (targetProfile.error || !targetProfile.data) {
+      throw targetProfile.error ?? new Error('Profile not found');
+    }
+
+    const payload = {
+      user_id: targetUserId,
+      excluded_days: settings.excluded_days ?? DEFAULT_SETTINGS.excluded_days,
+      target_end_date: settings.target_end_date ?? null,
+      target_hours: settings.target_hours ?? targetProfile.data.target_hours ?? 600,
+    };
+
+    const { data, error } = await supabase
+      .from('settings')
+      .upsert(payload)
+      .select('user_id, excluded_days, target_end_date, target_hours')
+      .single();
+
+    if (error) throw error;
+
+    await supabase.from('profiles').update({ target_hours: payload.target_hours }).eq('id', targetUserId);
+    await syncNotificationsForProfile({ ...(targetProfile.data as ProfileRow), target_hours: payload.target_hours });
     return { success: true, settings: data };
   },
 

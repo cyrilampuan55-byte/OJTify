@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Bell, Check, Clock, Play, Square, Settings, LogOut, Shield, TrendingUp, BarChart3, Calendar, BookOpen, ChevronLeft, ChevronRight, Plus, Trash2, X, AlertTriangle, ListFilter, Layers, Users, Activity, Search, Download, RefreshCw, Eye, Loader2, Lock, Mail, User, ArrowRight } from 'lucide-react';
+import { Bell, Check, Clock, Play, Square, LogOut, Shield, TrendingUp, BarChart3, Calendar, BookOpen, ChevronLeft, ChevronRight, Plus, Trash2, X, AlertTriangle, ListFilter, Layers, Users, Activity, Search, Download, RefreshCw, Eye, Loader2, Lock, Mail, User, ArrowRight } from 'lucide-react';
 import { api } from '@/lib/api';
 
 /* ─── helpers ─── */
@@ -272,6 +272,8 @@ function AdminDash() {
   const [editIn, setEditIn] = useState('');
   const [editOut, setEditOut] = useState('');
   const [savingLog, setSavingLog] = useState(false);
+  const [userSettings, setUserSettings] = useState<SettingsT>({ excluded_days: ['Sun'], target_end_date: null, target_hours: 600 });
+  const [savingSettings, setSavingSettings] = useState(false);
 
   const fetch = useCallback(async () => { try { const d = await api.adminUsers(); if (d?.users) setUsers(d.users); } catch {} finally { setLoading(false); } }, []);
   useEffect(() => { fetch(); const i = setInterval(fetch, 15000); return () => clearInterval(i); }, [fetch]);
@@ -292,7 +294,17 @@ function AdminDash() {
   const fmtE = (st: string) => { const sec = Math.floor((now - new Date(st).getTime()) / 1000); return `${Math.floor(sec/3600).toString().padStart(2,'0')}:${Math.floor((sec%3600)/60).toString().padStart(2,'0')}:${(sec%60).toString().padStart(2,'0')}`; };
 
   const handleExport = async () => { try { const d = await api.adminExport({}); if (d?.logs) { const csv = ['Name,Email,Date,Time In,Time Out,Hours', ...d.logs.map((l: any) => `"${l.profiles?.name||''}","${l.profiles?.email||''}","${new Date(l.time_in).toLocaleDateString()}","${new Date(l.time_in).toLocaleTimeString()}","${l.time_out?new Date(l.time_out).toLocaleTimeString():'Active'}","${(l.total_hours||0).toFixed(2)}"`)].join('\n'); const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([csv],{type:'text/csv'})); a.download = `ojt-report-${new Date().toISOString().split('T')[0]}.csv`; a.click(); } } catch {} };
-  const viewLogs = async (u: any) => { setSelUser(u); try { const d = await api.logs({ userId: u.id, limit: 50 }); setUserLogs(d?.logs || []); } catch {} };
+  const viewLogs = async (u: any) => {
+    setSelUser(u);
+    try {
+      const [logsData, settingsData] = await Promise.all([
+        api.logs({ userId: u.id, limit: 50 }),
+        api.getUserSettings(u.id),
+      ]);
+      setUserLogs(logsData?.logs || []);
+      setUserSettings(settingsData?.settings || { excluded_days: ['Sun'], target_end_date: null, target_hours: u.target_hours || 600 });
+    } catch {}
+  };
   const delUser = async (id: string) => { if (!confirm('Delete this user?')) return; try { await api.adminDelete(id); fetch(); } catch {} };
   const startEditLog = (log: any) => {
     const timeIn = new Date(log.time_in);
@@ -307,6 +319,29 @@ function AdminDash() {
     setEditDate('');
     setEditIn('');
     setEditOut('');
+  };
+  const toggleExcludedDay = (day: string) => {
+    setUserSettings(prev => ({
+      ...prev,
+      excluded_days: prev.excluded_days.includes(day)
+        ? prev.excluded_days.filter(item => item !== day)
+        : [...prev.excluded_days, day],
+    }));
+  };
+  const saveStudentSettings = async () => {
+    if (!selUser) return;
+    setSavingSettings(true);
+    try {
+      const result = await api.saveUserSettings(selUser.id, userSettings);
+      if (result?.settings) {
+        setUserSettings(result.settings);
+      }
+      await fetch();
+    } catch (e: any) {
+      alert(e?.message || 'Failed to save settings');
+    } finally {
+      setSavingSettings(false);
+    }
   };
   const saveEditLog = async () => {
     if (!editingLogId || !editDate || !editIn) return;
@@ -356,7 +391,7 @@ function AdminDash() {
         ))}
         {filtered.length === 0 && <div className="col-span-full text-center py-10"><Users className="w-10 h-10 text-slate-600 mx-auto mb-3" /><p className="text-slate-500 text-sm">No students found</p></div>}
       </div></div>
-      {selUser && <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4"><div className="bg-[#111827] border border-slate-700/50 rounded-2xl w-full max-w-2xl max-h-[80vh] overflow-hidden flex flex-col"><div className="flex items-center justify-between p-6 border-b border-slate-700/40"><div><h3 className="text-lg font-semibold text-white">{selUser.name}'s Logs</h3><p className="text-sm text-slate-500">{selUser.email}</p></div><button onClick={() => { cancelEditLog(); setSelUser(null); }} className="text-slate-400 hover:text-white"><X className="w-5 h-5" /></button></div><div className="flex-1 overflow-y-auto p-6"><div className="space-y-3">{userLogs.map((l: any) => <div key={l.id} className="px-4 py-3 bg-slate-800/30 rounded-lg">{editingLogId === l.id ? <div className="space-y-3"><div className="grid grid-cols-1 sm:grid-cols-3 gap-3"><input type="date" value={editDate} onChange={e => setEditDate(e.target.value)} className="w-full px-3 py-2 bg-[#0d1117] border border-slate-700/50 rounded-lg text-white text-sm focus:outline-none focus:border-cyan-500/50" /><input type="time" value={editIn} onChange={e => setEditIn(e.target.value)} className="w-full px-3 py-2 bg-[#0d1117] border border-slate-700/50 rounded-lg text-white text-sm focus:outline-none focus:border-cyan-500/50" /><input type="time" value={editOut} onChange={e => setEditOut(e.target.value)} className="w-full px-3 py-2 bg-[#0d1117] border border-slate-700/50 rounded-lg text-white text-sm focus:outline-none focus:border-cyan-500/50" /></div><div className="flex items-center justify-between gap-3"><span className="text-xs text-slate-500">Leave time out blank to keep the session active.</span><div className="flex gap-2"><button onClick={cancelEditLog} className="px-3 py-1.5 text-xs rounded-lg border border-slate-700/50 text-slate-400 hover:text-white transition-all">Cancel</button><button onClick={saveEditLog} disabled={savingLog} className="px-3 py-1.5 text-xs rounded-lg bg-cyan-500 text-white hover:bg-cyan-400 transition-all disabled:opacity-50">{savingLog ? 'Saving...' : 'Save'}</button></div></div></div> : <div className="flex items-center justify-between gap-4"><div><div className="text-sm text-white">{new Date(l.time_in).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}</div><div className="text-xs text-slate-400">{new Date(l.time_in).toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'})}{l.time_out?<> - {new Date(l.time_out).toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'})}</>:<span className="text-emerald-400 ml-2">Active</span>}</div></div><div className="flex items-center gap-3"><span className="text-sm font-mono text-cyan-400">{(l.total_hours||0).toFixed(2)} hrs</span><button onClick={() => startEditLog(l)} className="px-3 py-1.5 text-xs rounded-lg border border-slate-700/50 text-slate-400 hover:text-cyan-400 transition-all">Edit</button></div></div>}</div>)}{userLogs.length===0&&<p className="text-center text-slate-500 py-10">No logs found</p>}</div></div><div className="p-4 border-t border-slate-700/40 text-center"><span className="text-sm text-slate-400">Total: <span className="text-cyan-400 font-mono font-bold">{selectedUserTotal.toFixed(2)} hrs</span> / {selUser.target_hours} hrs</span></div></div></div>}
+      {selUser && <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4"><div className="bg-[#111827] border border-slate-700/50 rounded-2xl w-full max-w-3xl max-h-[80vh] overflow-hidden flex flex-col"><div className="flex items-center justify-between p-6 border-b border-slate-700/40"><div><h3 className="text-lg font-semibold text-white">{selUser.name}'s Logs</h3><p className="text-sm text-slate-500">{selUser.email}</p></div><button onClick={() => { cancelEditLog(); setSelUser(null); }} className="text-slate-400 hover:text-white"><X className="w-5 h-5" /></button></div><div className="flex-1 overflow-y-auto p-6 space-y-6"><div className="bg-slate-800/30 rounded-xl p-4 border border-slate-700/30"><div className="flex items-center justify-between gap-3 mb-4"><h4 className="text-sm font-semibold text-slate-300 tracking-wider">OJT SETTINGS</h4><button onClick={saveStudentSettings} disabled={savingSettings} className="px-3 py-1.5 text-xs rounded-lg bg-cyan-500 text-white hover:bg-cyan-400 transition-all disabled:opacity-50">{savingSettings ? 'Saving...' : 'Save Settings'}</button></div><div className="grid grid-cols-1 md:grid-cols-2 gap-4"><div><label className="block text-xs text-slate-400 mb-1.5">Target OJT Hours</label><input type="number" min={1} value={userSettings.target_hours} onChange={e => setUserSettings(prev => ({ ...prev, target_hours: Number(e.target.value) || 0 }))} className="w-full px-3 py-2 bg-[#0d1117] border border-slate-700/50 rounded-lg text-white text-sm focus:outline-none focus:border-cyan-500/50" /></div><div><label className="block text-xs text-slate-400 mb-1.5">Target End Date</label><input type="date" value={userSettings.target_end_date || ''} onChange={e => setUserSettings(prev => ({ ...prev, target_end_date: e.target.value || null }))} className="w-full px-3 py-2 bg-[#0d1117] border border-slate-700/50 rounded-lg text-white text-sm focus:outline-none focus:border-cyan-500/50" /></div></div><div className="mt-4"><label className="block text-xs text-slate-400 mb-2">Exclude Days from Calculation</label><div className="grid grid-cols-4 sm:grid-cols-7 gap-2">{['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map(day => <button key={day} onClick={() => toggleExcludedDay(day)} className={`py-2 text-xs rounded-lg border transition-all ${userSettings.excluded_days.includes(day) ? 'bg-rose-500/20 border-rose-500/30 text-rose-400' : 'bg-slate-900/60 border-slate-700/40 text-slate-400 hover:text-white'}`}>{day}</button>)}</div></div></div><div className="space-y-3">{userLogs.map((l: any) => <div key={l.id} className="px-4 py-3 bg-slate-800/30 rounded-lg">{editingLogId === l.id ? <div className="space-y-3"><div className="grid grid-cols-1 sm:grid-cols-3 gap-3"><input type="date" value={editDate} onChange={e => setEditDate(e.target.value)} className="w-full px-3 py-2 bg-[#0d1117] border border-slate-700/50 rounded-lg text-white text-sm focus:outline-none focus:border-cyan-500/50" /><input type="time" value={editIn} onChange={e => setEditIn(e.target.value)} className="w-full px-3 py-2 bg-[#0d1117] border border-slate-700/50 rounded-lg text-white text-sm focus:outline-none focus:border-cyan-500/50" /><input type="time" value={editOut} onChange={e => setEditOut(e.target.value)} className="w-full px-3 py-2 bg-[#0d1117] border border-slate-700/50 rounded-lg text-white text-sm focus:outline-none focus:border-cyan-500/50" /></div><div className="flex items-center justify-between gap-3"><span className="text-xs text-slate-500">Leave time out blank to keep the session active.</span><div className="flex gap-2"><button onClick={cancelEditLog} className="px-3 py-1.5 text-xs rounded-lg border border-slate-700/50 text-slate-400 hover:text-white transition-all">Cancel</button><button onClick={saveEditLog} disabled={savingLog} className="px-3 py-1.5 text-xs rounded-lg bg-cyan-500 text-white hover:bg-cyan-400 transition-all disabled:opacity-50">{savingLog ? 'Saving...' : 'Save'}</button></div></div></div> : <div className="flex items-center justify-between gap-4"><div><div className="text-sm text-white">{new Date(l.time_in).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}</div><div className="text-xs text-slate-400">{new Date(l.time_in).toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'})}{l.time_out?<> - {new Date(l.time_out).toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'})}</>:<span className="text-emerald-400 ml-2">Active</span>}</div></div><div className="flex items-center gap-3"><span className="text-sm font-mono text-cyan-400">{(l.total_hours||0).toFixed(2)} hrs</span><button onClick={() => startEditLog(l)} className="px-3 py-1.5 text-xs rounded-lg border border-slate-700/50 text-slate-400 hover:text-cyan-400 transition-all">Edit</button></div></div>}</div>)}{userLogs.length===0&&<p className="text-center text-slate-500 py-10">No logs found</p>}</div></div><div className="p-4 border-t border-slate-700/40 text-center"><span className="text-sm text-slate-400">Total: <span className="text-cyan-400 font-mono font-bold">{selectedUserTotal.toFixed(2)} hrs</span> / {userSettings.target_hours} hrs</span></div></div></div>}
     </div>
   );
 }
@@ -368,7 +403,6 @@ const AppLayout: React.FC = () => {
   const [user, setUser] = useState<UserT | null>(null);
   const [settings, setSettings] = useState<SettingsT>({ excluded_days: ['Sun'], target_end_date: null, target_hours: 600 });
   const [loading, setLoading] = useState(true);
-  const [showSettings, setShowSettings] = useState(false);
   const [stats, setStats] = useState<StatsT>({ today: 0, week: 0, month: 0, total: 0, daysWorked: 0 });
   const [logs, setLogs] = useState<LogT[]>([]);
   const [notifications, setNotifications] = useState<NotificationT[]>([]);
@@ -535,9 +569,6 @@ const AppLayout: React.FC = () => {
             </div>
           )}
           <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-cyan-500 flex items-center justify-center text-white text-sm font-bold">{user.name.charAt(0).toUpperCase()}</div>
-          {user.role !== 'admin' && (
-            <button onClick={() => setShowSettings(true)} className="w-9 h-9 rounded-full border border-slate-700/50 flex items-center justify-center text-slate-400 hover:text-white hover:border-slate-600 transition-all"><Settings className="w-4 h-4" /></button>
-          )}
           <button onClick={handleLogout} className="w-9 h-9 rounded-full border border-slate-700/50 flex items-center justify-center text-slate-400 hover:text-red-400 hover:border-red-500/30 transition-all"><LogOut className="w-4 h-4" /></button>
         </div>
       </header>
@@ -557,10 +588,6 @@ const AppLayout: React.FC = () => {
           </div>
         )}
       </main>
-
-      {user.role !== 'admin' && (
-        <SettingsModal isOpen={showSettings} onClose={() => setShowSettings(false)} settings={settings} onSave={(s) => { setSettings(s); fetchData(); }} />
-      )}
     </div>
   );
 };
