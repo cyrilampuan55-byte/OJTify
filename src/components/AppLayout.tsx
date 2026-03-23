@@ -62,13 +62,6 @@ function LoginPage({ onLogin }: { onLogin: (u: UserT, s: SettingsT | null) => vo
             </button>
           </form>
           <div className="mt-6 text-center"><button onClick={() => { setIsReg(!isReg); setError(''); }} className="text-sm text-slate-400 hover:text-cyan-400 transition-colors">{isReg ? 'Already have an account? Sign in' : "Don't have an account? Register"}</button></div>
-          <div className="mt-6 pt-4 border-t border-slate-700/50">
-            <p className="text-xs text-slate-500 text-center mb-3">Quick fill for common accounts. Register them first in Supabase if they do not exist yet.</p>
-            <div className="grid grid-cols-2 gap-2">
-              <button onClick={() => { setEmail('tron@ojtify.com'); setPassword('demo123'); setIsReg(false); }} className="px-3 py-2 text-xs bg-slate-800/50 border border-slate-700/30 rounded-lg text-slate-400 hover:text-cyan-400 hover:border-cyan-500/30 transition-all">Student: tron@ojtify.com</button>
-              <button onClick={() => { setEmail('admin@ojtify.com'); setPassword('admin123'); setIsReg(false); }} className="px-3 py-2 text-xs bg-slate-800/50 border border-slate-700/30 rounded-lg text-slate-400 hover:text-cyan-400 hover:border-cyan-500/30 transition-all">Admin: admin@ojtify.com</button>
-            </div>
-          </div>
         </div>
       </div>
     </div>
@@ -218,30 +211,18 @@ function CalendarView({ logs }: { logs: LogT[] }) {
 /* ═══════════════════════════════════════════════════════════════════
    RECENT ENTRIES
    ═══════════════════════════════════════════════════════════════════ */
-function RecentEntries({ logs, onRefresh }: { logs: LogT[]; onRefresh: () => void }) {
-  const [showAdd, setShowAdd] = useState(false);
-  const [addDate, setAddDate] = useState(''); const [addIn, setAddIn] = useState('08:00'); const [addOut, setAddOut] = useState('17:00');
-  const [loading, setLoading] = useState(false);
-  const handleAdd = async () => { if (!addDate) return; setLoading(true); try { await api.addEntry(new Date(`${addDate}T${addIn}:00`).toISOString(), new Date(`${addDate}T${addOut}:00`).toISOString()); setShowAdd(false); onRefresh(); } catch {} finally { setLoading(false); } };
-  const handleDel = async (id: string) => { try { await api.deleteEntry(id); onRefresh(); } catch {} };
-
+function RecentEntries({ logs }: { logs: LogT[] }) {
   return (
     <div className="bg-[#111827]/80 border border-slate-700/40 rounded-2xl p-5 md:p-6">
-      <div className="flex items-center justify-between mb-4 flex-wrap gap-2"><h3 className="text-sm font-semibold text-slate-400 tracking-wider">RECENT ENTRIES</h3><button onClick={() => setShowAdd(true)} className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg border border-slate-700/50 text-slate-400 hover:text-white hover:border-slate-600 transition-all"><Plus className="w-3.5 h-3.5" />Add</button></div>
+      <div className="flex items-center justify-between mb-4 flex-wrap gap-2"><h3 className="text-sm font-semibold text-slate-400 tracking-wider">RECENT ENTRIES</h3></div>
       <div className="space-y-2 max-h-80 overflow-y-auto">
         {logs.length === 0 ? <div className="text-center py-10"><Layers className="w-10 h-10 text-slate-600 mx-auto mb-3" /><p className="text-slate-500 text-sm">No time entries yet.</p><p className="text-slate-600 text-xs mt-1">Click "Time In" to start tracking!</p></div> : logs.slice(0, 20).map(l => (
-          <div key={l.id} className="flex items-center gap-3 px-3 py-2.5 rounded-lg bg-slate-800/30 group">
+          <div key={l.id} className="flex items-center gap-3 px-3 py-2.5 rounded-lg bg-slate-800/30">
             <div className="flex-1 min-w-0"><div className="text-xs text-slate-400">{new Date(l.time_in).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}</div><div className="text-sm text-slate-300">{new Date(l.time_in).toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'})}{l.time_out ? <span> - {new Date(l.time_out).toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'})}</span> : <span className="text-emerald-400 ml-2 text-xs">Active</span>}</div></div>
             <div className="text-sm font-mono text-cyan-400">{(l.total_hours||0).toFixed(2)} hrs</div>
-            <button onClick={() => handleDel(l.id)} className="opacity-0 group-hover:opacity-100 text-slate-600 hover:text-red-400 transition-all"><Trash2 className="w-3.5 h-3.5" /></button>
           </div>
         ))}
       </div>
-      {showAdd && <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4"><div className="bg-[#111827] border border-slate-700/50 rounded-2xl p-6 w-full max-w-sm">
-        <div className="flex items-center justify-between mb-4"><h3 className="text-lg font-semibold text-white">Add Entry</h3><button onClick={() => setShowAdd(false)} className="text-slate-400 hover:text-white"><X className="w-5 h-5" /></button></div>
-        <div className="space-y-4"><div><label className="block text-sm text-slate-400 mb-1">Date</label><input type="date" value={addDate} onChange={e => setAddDate(e.target.value)} className="w-full px-3 py-2.5 bg-[#0d1117] border border-slate-700/50 rounded-xl text-white focus:outline-none focus:border-cyan-500/50" /></div><div className="grid grid-cols-2 gap-3"><div><label className="block text-sm text-slate-400 mb-1">Time In</label><input type="time" value={addIn} onChange={e => setAddIn(e.target.value)} className="w-full px-3 py-2.5 bg-[#0d1117] border border-slate-700/50 rounded-xl text-white focus:outline-none focus:border-cyan-500/50" /></div><div><label className="block text-sm text-slate-400 mb-1">Time Out</label><input type="time" value={addOut} onChange={e => setAddOut(e.target.value)} className="w-full px-3 py-2.5 bg-[#0d1117] border border-slate-700/50 rounded-xl text-white focus:outline-none focus:border-cyan-500/50" /></div></div></div>
-        <div className="flex gap-3 mt-6"><button onClick={() => setShowAdd(false)} className="flex-1 py-2.5 rounded-xl border border-slate-700/50 text-slate-400 hover:text-white transition-all">Cancel</button><button onClick={handleAdd} disabled={loading||!addDate} className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 text-white font-medium disabled:opacity-50">{loading ? <Loader2 className="w-4 h-4 animate-spin mx-auto" /> : 'Add Entry'}</button></div>
-      </div></div>}
     </div>
   );
 }
@@ -286,6 +267,11 @@ function AdminDash() {
   const [now, setNow] = useState(Date.now());
   const [selUser, setSelUser] = useState<any>(null);
   const [userLogs, setUserLogs] = useState<any[]>([]);
+  const [editingLogId, setEditingLogId] = useState<string | null>(null);
+  const [editDate, setEditDate] = useState('');
+  const [editIn, setEditIn] = useState('');
+  const [editOut, setEditOut] = useState('');
+  const [savingLog, setSavingLog] = useState(false);
 
   const fetch = useCallback(async () => { try { const d = await api.adminUsers(); if (d?.users) setUsers(d.users); } catch {} finally { setLoading(false); } }, []);
   useEffect(() => { fetch(); const i = setInterval(fetch, 15000); return () => clearInterval(i); }, [fetch]);
@@ -302,11 +288,49 @@ function AdminDash() {
   const totalH = students.reduce((s: number, u: any) => s + u.totalHours, 0);
   const activeN = students.filter((u: any) => u.isActive).length;
   const avgPct = students.length > 0 ? Math.round(students.reduce((s: number, u: any) => s + u.progress, 0) / students.length) : 0;
+  const selectedUserTotal = userLogs.reduce((sum: number, log: any) => sum + (log.total_hours || 0), 0);
   const fmtE = (st: string) => { const sec = Math.floor((now - new Date(st).getTime()) / 1000); return `${Math.floor(sec/3600).toString().padStart(2,'0')}:${Math.floor((sec%3600)/60).toString().padStart(2,'0')}:${(sec%60).toString().padStart(2,'0')}`; };
 
   const handleExport = async () => { try { const d = await api.adminExport({}); if (d?.logs) { const csv = ['Name,Email,Date,Time In,Time Out,Hours', ...d.logs.map((l: any) => `"${l.profiles?.name||''}","${l.profiles?.email||''}","${new Date(l.time_in).toLocaleDateString()}","${new Date(l.time_in).toLocaleTimeString()}","${l.time_out?new Date(l.time_out).toLocaleTimeString():'Active'}","${(l.total_hours||0).toFixed(2)}"`)].join('\n'); const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([csv],{type:'text/csv'})); a.download = `ojt-report-${new Date().toISOString().split('T')[0]}.csv`; a.click(); } } catch {} };
   const viewLogs = async (u: any) => { setSelUser(u); try { const d = await api.logs({ userId: u.id, limit: 50 }); setUserLogs(d?.logs || []); } catch {} };
   const delUser = async (id: string) => { if (!confirm('Delete this user?')) return; try { await api.adminDelete(id); fetch(); } catch {} };
+  const startEditLog = (log: any) => {
+    const timeIn = new Date(log.time_in);
+    const timeOut = log.time_out ? new Date(log.time_out) : null;
+    setEditingLogId(log.id);
+    setEditDate(timeIn.toLocaleDateString('en-CA'));
+    setEditIn(timeIn.toTimeString().slice(0, 5));
+    setEditOut(timeOut ? timeOut.toTimeString().slice(0, 5) : '');
+  };
+  const cancelEditLog = () => {
+    setEditingLogId(null);
+    setEditDate('');
+    setEditIn('');
+    setEditOut('');
+  };
+  const saveEditLog = async () => {
+    if (!editingLogId || !editDate || !editIn) return;
+    setSavingLog(true);
+    try {
+      const timeIn = new Date(`${editDate}T${editIn}:00`).toISOString();
+      const timeOut = editOut ? new Date(`${editDate}T${editOut}:00`).toISOString() : null;
+      const result = await api.updateEntry(editingLogId, timeIn, timeOut);
+      if (result?.error) {
+        alert(result.error);
+        return;
+      }
+      if (selUser) {
+        const d = await api.logs({ userId: selUser.id, limit: 50 });
+        setUserLogs(d?.logs || []);
+      }
+      await fetch();
+      cancelEditLog();
+    } catch (e: any) {
+      alert(e?.message || 'Failed to update log');
+    } finally {
+      setSavingLog(false);
+    }
+  };
 
   if (loading) return <div className="flex justify-center py-20"><Loader2 className="w-8 h-8 text-cyan-400 animate-spin" /></div>;
 
@@ -332,7 +356,7 @@ function AdminDash() {
         ))}
         {filtered.length === 0 && <div className="col-span-full text-center py-10"><Users className="w-10 h-10 text-slate-600 mx-auto mb-3" /><p className="text-slate-500 text-sm">No students found</p></div>}
       </div></div>
-      {selUser && <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4"><div className="bg-[#111827] border border-slate-700/50 rounded-2xl w-full max-w-2xl max-h-[80vh] overflow-hidden flex flex-col"><div className="flex items-center justify-between p-6 border-b border-slate-700/40"><div><h3 className="text-lg font-semibold text-white">{selUser.name}'s Logs</h3><p className="text-sm text-slate-500">{selUser.email}</p></div><button onClick={() => setSelUser(null)} className="text-slate-400 hover:text-white"><X className="w-5 h-5" /></button></div><div className="flex-1 overflow-y-auto p-6"><div className="space-y-2">{userLogs.map((l: any) => <div key={l.id} className="flex items-center justify-between px-4 py-3 bg-slate-800/30 rounded-lg"><div><div className="text-sm text-white">{new Date(l.time_in).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}</div><div className="text-xs text-slate-400">{new Date(l.time_in).toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'})}{l.time_out?<> - {new Date(l.time_out).toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'})}</>:<span className="text-emerald-400 ml-2">Active</span>}</div></div><span className="text-sm font-mono text-cyan-400">{(l.total_hours||0).toFixed(2)} hrs</span></div>)}{userLogs.length===0&&<p className="text-center text-slate-500 py-10">No logs found</p>}</div></div><div className="p-4 border-t border-slate-700/40 text-center"><span className="text-sm text-slate-400">Total: <span className="text-cyan-400 font-mono font-bold">{selUser.totalHours.toFixed(2)} hrs</span> / {selUser.target_hours} hrs</span></div></div></div>}
+      {selUser && <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4"><div className="bg-[#111827] border border-slate-700/50 rounded-2xl w-full max-w-2xl max-h-[80vh] overflow-hidden flex flex-col"><div className="flex items-center justify-between p-6 border-b border-slate-700/40"><div><h3 className="text-lg font-semibold text-white">{selUser.name}'s Logs</h3><p className="text-sm text-slate-500">{selUser.email}</p></div><button onClick={() => { cancelEditLog(); setSelUser(null); }} className="text-slate-400 hover:text-white"><X className="w-5 h-5" /></button></div><div className="flex-1 overflow-y-auto p-6"><div className="space-y-3">{userLogs.map((l: any) => <div key={l.id} className="px-4 py-3 bg-slate-800/30 rounded-lg">{editingLogId === l.id ? <div className="space-y-3"><div className="grid grid-cols-1 sm:grid-cols-3 gap-3"><input type="date" value={editDate} onChange={e => setEditDate(e.target.value)} className="w-full px-3 py-2 bg-[#0d1117] border border-slate-700/50 rounded-lg text-white text-sm focus:outline-none focus:border-cyan-500/50" /><input type="time" value={editIn} onChange={e => setEditIn(e.target.value)} className="w-full px-3 py-2 bg-[#0d1117] border border-slate-700/50 rounded-lg text-white text-sm focus:outline-none focus:border-cyan-500/50" /><input type="time" value={editOut} onChange={e => setEditOut(e.target.value)} className="w-full px-3 py-2 bg-[#0d1117] border border-slate-700/50 rounded-lg text-white text-sm focus:outline-none focus:border-cyan-500/50" /></div><div className="flex items-center justify-between gap-3"><span className="text-xs text-slate-500">Leave time out blank to keep the session active.</span><div className="flex gap-2"><button onClick={cancelEditLog} className="px-3 py-1.5 text-xs rounded-lg border border-slate-700/50 text-slate-400 hover:text-white transition-all">Cancel</button><button onClick={saveEditLog} disabled={savingLog} className="px-3 py-1.5 text-xs rounded-lg bg-cyan-500 text-white hover:bg-cyan-400 transition-all disabled:opacity-50">{savingLog ? 'Saving...' : 'Save'}</button></div></div></div> : <div className="flex items-center justify-between gap-4"><div><div className="text-sm text-white">{new Date(l.time_in).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}</div><div className="text-xs text-slate-400">{new Date(l.time_in).toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'})}{l.time_out?<> - {new Date(l.time_out).toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'})}</>:<span className="text-emerald-400 ml-2">Active</span>}</div></div><div className="flex items-center gap-3"><span className="text-sm font-mono text-cyan-400">{(l.total_hours||0).toFixed(2)} hrs</span><button onClick={() => startEditLog(l)} className="px-3 py-1.5 text-xs rounded-lg border border-slate-700/50 text-slate-400 hover:text-cyan-400 transition-all">Edit</button></div></div>}</div>)}{userLogs.length===0&&<p className="text-center text-slate-500 py-10">No logs found</p>}</div></div><div className="p-4 border-t border-slate-700/40 text-center"><span className="text-sm text-slate-400">Total: <span className="text-cyan-400 font-mono font-bold">{selectedUserTotal.toFixed(2)} hrs</span> / {selUser.target_hours} hrs</span></div></div></div>}
     </div>
   );
 }
@@ -511,7 +535,9 @@ const AppLayout: React.FC = () => {
             </div>
           )}
           <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-cyan-500 flex items-center justify-center text-white text-sm font-bold">{user.name.charAt(0).toUpperCase()}</div>
-          <button onClick={() => setShowSettings(true)} className="w-9 h-9 rounded-full border border-slate-700/50 flex items-center justify-center text-slate-400 hover:text-white hover:border-slate-600 transition-all"><Settings className="w-4 h-4" /></button>
+          {user.role !== 'admin' && (
+            <button onClick={() => setShowSettings(true)} className="w-9 h-9 rounded-full border border-slate-700/50 flex items-center justify-center text-slate-400 hover:text-white hover:border-slate-600 transition-all"><Settings className="w-4 h-4" /></button>
+          )}
           <button onClick={handleLogout} className="w-9 h-9 rounded-full border border-slate-700/50 flex items-center justify-center text-slate-400 hover:text-red-400 hover:border-red-500/30 transition-all"><LogOut className="w-4 h-4" /></button>
         </div>
       </header>
@@ -527,12 +553,14 @@ const AppLayout: React.FC = () => {
               <InsightsPanel stats={stats} target={settings.target_hours} excluded={settings.excluded_days} />
               <CalendarView logs={logs} />
             </div>
-            <RecentEntries logs={logs} onRefresh={fetchData} />
+            <RecentEntries logs={logs} />
           </div>
         )}
       </main>
 
-      <SettingsModal isOpen={showSettings} onClose={() => setShowSettings(false)} settings={settings} onSave={(s) => { setSettings(s); fetchData(); }} />
+      {user.role !== 'admin' && (
+        <SettingsModal isOpen={showSettings} onClose={() => setShowSettings(false)} settings={settings} onSave={(s) => { setSettings(s); fetchData(); }} />
+      )}
     </div>
   );
 };

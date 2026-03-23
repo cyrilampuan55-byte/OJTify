@@ -142,25 +142,6 @@ const LoginPage: React.FC = () => {
               {isRegister ? 'Already have an account? Sign in' : "Don't have an account? Register"}
             </button>
           </div>
-
-          {/* Demo credentials */}
-          <div className="mt-6 pt-4 border-t border-slate-700/50">
-            <p className="text-xs text-slate-500 text-center mb-3">Quick fill for common accounts. Register them first in Supabase if they do not exist yet.</p>
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                onClick={() => { setEmail('tron@ojtify.com'); setPassword('demo123'); setIsRegister(false); }}
-                className="px-3 py-2 text-xs bg-slate-800/50 border border-slate-700/30 rounded-lg text-slate-400 hover:text-cyan-400 hover:border-cyan-500/30 transition-all"
-              >
-                Student: tron@ojtify.com
-              </button>
-              <button
-                onClick={() => { setEmail('admin@ojtify.com'); setPassword('admin123'); setIsRegister(false); }}
-                className="px-3 py-2 text-xs bg-slate-800/50 border border-slate-700/30 rounded-lg text-slate-400 hover:text-cyan-400 hover:border-cyan-500/30 transition-all"
-              >
-                Admin: admin@ojtify.com
-              </button>
-            </div>
-          </div>
         </div>
       </div>
     </div>

@@ -382,6 +382,44 @@ export const api = {
     return { success: true };
   },
 
+  updateEntry: async (entryId: string, time_in: string, time_out: string | null) => {
+    const { profile } = await requireProfile();
+    if (time_out && new Date(time_out).getTime() <= new Date(time_in).getTime()) {
+      return { error: 'Time out must be after time in' };
+    }
+
+    const payload = {
+      time_in,
+      time_out,
+      total_hours: computeHours(time_in, time_out),
+    };
+
+    const { data, error } = await supabase
+      .from('logs')
+      .update(payload)
+      .eq('id', entryId)
+      .select('id, user_id, time_in, time_out, total_hours')
+      .single();
+
+    if (error) return { error: error.message };
+
+    if (profile.role === 'admin' && data?.user_id) {
+      const { data: targetProfile } = await supabase
+        .from('profiles')
+        .select('id, name, email, role, target_hours')
+        .eq('id', data.user_id)
+        .maybeSingle();
+
+      if (targetProfile) {
+        await syncNotificationsForProfile(targetProfile as ProfileRow);
+      }
+    } else {
+      await syncNotificationsForProfile(profile);
+    }
+
+    return { success: true, log: data };
+  },
+
   resetData: async () => {
     const { profile } = await requireProfile();
     await supabase.from('logs').delete().eq('user_id', profile.id);
