@@ -8,9 +8,12 @@ import { fileURLToPath } from 'node:url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const rootDir = path.resolve(__dirname, '..');
-const dataDir = path.join(rootDir, 'data');
-const dbPath = path.join(dataDir, 'ojtify.db');
+const dataDir = process.env.DATA_DIR || path.join(rootDir, 'data');
+const dbPath = process.env.DATABASE_PATH || path.join(dataDir, 'ojtify.db');
+const distDir = path.join(rootDir, 'dist');
 const PORT = Number(process.env.PORT || 3001);
+const HOST = process.env.HOST || '0.0.0.0';
+const isProduction = process.env.NODE_ENV === 'production';
 const DEFAULT_TARGET_HOURS = 600;
 
 fs.mkdirSync(dataDir, { recursive: true });
@@ -310,6 +313,9 @@ const writeMutation = (handler, eventType = 'refresh') => {
 const app = express();
 app.use(cors());
 app.use(express.json());
+if (isProduction && fs.existsSync(distDir)) {
+  app.use(express.static(distDir));
+}
 
 const requireAuth = (req, res, next) => {
   const auth = req.headers.authorization || '';
@@ -581,7 +587,15 @@ app.get('/api/health', (_req, res) => {
   res.json({ ok: true });
 });
 
-app.listen(PORT, () => {
+if (isProduction && fs.existsSync(distDir)) {
+  app.get('*', (req, res, next) => {
+    if (req.path.startsWith('/api/')) return next();
+    res.sendFile(path.join(distDir, 'index.html'));
+  });
+}
+
+app.listen(PORT, HOST, () => {
   syncNotificationsForAllStudents();
-  console.log(`OJTify local API listening on http://127.0.0.1:${PORT}`);
+  console.log(`OJTify server listening on http://${HOST}:${PORT}`);
+  console.log(`Database path: ${dbPath}`);
 });
