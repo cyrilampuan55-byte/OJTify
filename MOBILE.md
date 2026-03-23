@@ -5,23 +5,26 @@
 - PWA install from the browser
 - Capacitor wrappers for Android and iOS
 
-### API configuration
+### Supabase configuration
 
-The mobile app cannot use `127.0.0.1:3001` unless the backend runs on the same device.
-
-For phone testing, create `.env.local` or `.env.production` with:
+For mobile builds, create `.env.mobile` with:
 
 ```env
-VITE_API_BASE=http://YOUR_LOCAL_IP:3001/api
+VITE_SUPABASE_URL=https://your-project-ref.supabase.co
+VITE_SUPABASE_ANON_KEY=your-anon-key
 ```
 
-Replace `YOUR_LOCAL_IP` with the machine running the OJTify server, for example `192.168.1.10`.
+You can copy from `.env.mobile.example` and fill in your project values.
+
+Before login will work, run [supabase/schema.sql](/c:/Users/ABSOLUTE/Documents/OJTify/supabase/schema.sql) in the Supabase SQL editor and enable the Email auth provider.
 
 ### Commands
 
 ```bash
 npm run build
+npm run build:mobile
 npm run cap:sync
+npm run cap:sync:mobile
 npm run cap:android
 npm run cap:ios
 ```

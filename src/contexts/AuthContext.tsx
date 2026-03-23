@@ -43,21 +43,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const token = localStorage.getItem('ojt_token');
-    if (token) {
-      api.verify().then((data) => {
-        if (data?.user) {
-          setUser(data.user);
-          setSettings(data.settings || { excluded_days: ['Sun'], target_end_date: null, target_hours: 600 });
-        } else {
-          localStorage.removeItem('ojt_token');
-        }
-      }).catch(() => {
+    api.verify().then((data) => {
+      if (data?.user) {
+        setUser(data.user);
+        setSettings(data.settings || { excluded_days: ['Sun'], target_end_date: null, target_hours: 600 });
+      } else {
         localStorage.removeItem('ojt_token');
-      }).finally(() => setLoading(false));
-    } else {
-      setLoading(false);
-    }
+      }
+    }).catch(() => {
+      localStorage.removeItem('ojt_token');
+    }).finally(() => setLoading(false));
   }, []);
 
   const login = useCallback(async (email: string, password: string) => {
@@ -93,6 +88,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   const logout = useCallback(() => {
+    api.logout().catch(() => {});
     localStorage.removeItem('ojt_token');
     setUser(null);
     setSettings(null);

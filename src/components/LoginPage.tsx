@@ -145,7 +145,7 @@ const LoginPage: React.FC = () => {
 
           {/* Demo credentials */}
           <div className="mt-6 pt-4 border-t border-slate-700/50">
-            <p className="text-xs text-slate-500 text-center mb-3">Demo Accounts (any password on first login)</p>
+            <p className="text-xs text-slate-500 text-center mb-3">Quick fill for common accounts. Register them first in Supabase if they do not exist yet.</p>
             <div className="grid grid-cols-2 gap-2">
               <button
                 onClick={() => { setEmail('tron@ojtify.com'); setPassword('demo123'); setIsRegister(false); }}

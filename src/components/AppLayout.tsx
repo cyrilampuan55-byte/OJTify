@@ -31,7 +31,7 @@ function LoginPage({ onLogin }: { onLogin: (u: UserT, s: SettingsT | null) => vo
       const data = isReg ? await api.register(email.trim(), password, name.trim()) : await api.login(email.trim(), password);
       if (data?.token) { setToken(data.token); onLogin(data.user, data.settings); }
       else setError(data?.error || 'Failed');
-    } catch { setError('Connection error'); } finally { setLoading(false); }
+    } catch (e: any) { setError(e?.message || 'Connection error'); } finally { setLoading(false); }
   };
 
   return (
@@ -63,7 +63,7 @@ function LoginPage({ onLogin }: { onLogin: (u: UserT, s: SettingsT | null) => vo
           </form>
           <div className="mt-6 text-center"><button onClick={() => { setIsReg(!isReg); setError(''); }} className="text-sm text-slate-400 hover:text-cyan-400 transition-colors">{isReg ? 'Already have an account? Sign in' : "Don't have an account? Register"}</button></div>
           <div className="mt-6 pt-4 border-t border-slate-700/50">
-            <p className="text-xs text-slate-500 text-center mb-3">Demo Accounts (any password on first login)</p>
+            <p className="text-xs text-slate-500 text-center mb-3">Quick fill for common accounts. Register them first in Supabase if they do not exist yet.</p>
             <div className="grid grid-cols-2 gap-2">
               <button onClick={() => { setEmail('tron@ojtify.com'); setPassword('demo123'); setIsReg(false); }} className="px-3 py-2 text-xs bg-slate-800/50 border border-slate-700/30 rounded-lg text-slate-400 hover:text-cyan-400 hover:border-cyan-500/30 transition-all">Student: tron@ojtify.com</button>
               <button onClick={() => { setEmail('admin@ojtify.com'); setPassword('admin123'); setIsReg(false); }} className="px-3 py-2 text-xs bg-slate-800/50 border border-slate-700/30 rounded-lg text-slate-400 hover:text-cyan-400 hover:border-cyan-500/30 transition-all">Admin: admin@ojtify.com</button>
@@ -354,10 +354,7 @@ const AppLayout: React.FC = () => {
 
   // Check token on mount
   useEffect(() => {
-    const token = getToken();
-    if (token) {
-      api.verify().then(d => { if (d?.user) { setUser(d.user); if (d.settings) setSettings(d.settings); } else clearToken(); }).catch(() => clearToken()).finally(() => setLoading(false));
-    } else setLoading(false);
+    api.verify().then(d => { if (d?.user) { setUser(d.user); if (d.settings) setSettings(d.settings); } else clearToken(); }).catch(() => clearToken()).finally(() => setLoading(false));
   }, []);
 
   const fetchNotifications = useCallback(async () => {
@@ -414,7 +411,7 @@ const AppLayout: React.FC = () => {
   }, [showNotifications]);
 
   const handleLogin = (u: UserT, s: SettingsT | null) => { setUser(u); if (s) setSettings(s); };
-  const handleLogout = () => { clearToken(); setUser(null); setNotifications([]); setUnreadNotifications(0); setShowNotifications(false); };
+  const handleLogout = async () => { await api.logout().catch(() => {}); clearToken(); setUser(null); setNotifications([]); setUnreadNotifications(0); setShowNotifications(false); };
   const handleNotificationToggle = async () => {
     if (!showNotifications) {
       await fetchNotifications();
