@@ -18,32 +18,18 @@ interface LogT {
   entry_type?: 'regular' | 'overtime';
   description?: string | null;
   check_ip?: string | null;
-  verification_status?: 'verified' | 'partial' | 'unverified';
+  verification_status?: 'verified' | 'unverified';
   verification_summary?: string | null;
 }
 interface StatsT { today: number; week: number; month: number; total: number; daysWorked: number }
 interface NotificationT { id: string; type: string; title: string; message: string; created_at: string; read_at: string | null }
 
 const verificationBadgeClass = (status?: LogT['verification_status']) => {
-  switch (status) {
-    case 'verified':
-      return 'bg-emerald-500/15 border-emerald-500/30 text-emerald-400';
-    case 'partial':
-      return 'bg-amber-500/15 border-amber-500/30 text-amber-400';
-    default:
-      return 'bg-rose-500/15 border-rose-500/30 text-rose-400';
-  }
+  return status === 'verified' ? 'bg-emerald-500/15 border-emerald-500/30 text-emerald-400' : '';
 };
 
 const verificationLabel = (status?: LogT['verification_status']) => {
-  switch (status) {
-    case 'verified':
-      return 'Verified';
-    case 'partial':
-      return 'Partial';
-    default:
-      return 'Unverified';
-  }
+  return status === 'verified' ? 'Verified' : '';
 };
 
 const logPrimaryText = (log: LogT) => {
@@ -142,7 +128,6 @@ function TimerCard({ onSessionChange }: { onSessionChange: () => void }) {
         setWorking(true);
         setElapsed(0);
         onSessionChange();
-        if (d.warning) alert(`Time in recorded.\n\nVerification note: ${d.warning}`);
       } else if (d?.error) {
         alert(d.error);
       }
@@ -279,7 +264,9 @@ function RecentEntries({ logs }: { logs: LogT[] }) {
               <div className="text-xs text-slate-400">{new Date(l.time_in).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}</div>
               <div className="text-sm text-slate-300">{logPrimaryText(l)}{!l.time_out ? <span className="text-emerald-400 ml-2 text-xs">Active</span> : null}</div>
               <div className="mt-1 flex items-center gap-2">
-                <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium ${verificationBadgeClass(l.verification_status)}`}>{verificationLabel(l.verification_status)}</span>
+                {l.verification_status === 'verified' && (
+                  <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium ${verificationBadgeClass(l.verification_status)}`}>{verificationLabel(l.verification_status)}</span>
+                )}
                 {l.check_ip && <span className="text-[11px] text-slate-500">{l.check_ip}</span>}
               </div>
               {l.verification_summary && <p className="mt-1 text-[11px] text-slate-500">{l.verification_summary}</p>}
@@ -785,7 +772,9 @@ function AdminDash() {
                             {!l.time_out ? <span className="text-emerald-400 ml-2">Active</span> : null}
                           </div>
                           <div className="mt-2 flex flex-wrap items-center gap-2">
-                            <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium ${verificationBadgeClass(l.verification_status)}`}>{verificationLabel(l.verification_status)}</span>
+                            {l.verification_status === 'verified' && (
+                              <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium ${verificationBadgeClass(l.verification_status)}`}>{verificationLabel(l.verification_status)}</span>
+                            )}
                             {l.entry_type === 'overtime' && <span className="inline-flex items-center rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[11px] font-medium text-amber-300">Overtime</span>}
                             {l.check_ip && <span className="text-[11px] text-slate-500">{l.check_ip}</span>}
                           </div>

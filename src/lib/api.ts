@@ -30,7 +30,7 @@ interface LogRow {
   check_longitude?: number | null;
   check_accuracy_meters?: number | null;
   check_ip?: string | null;
-  verification_status?: 'verified' | 'partial' | 'unverified';
+  verification_status?: 'verified' | 'unverified';
   verification_summary?: string | null;
 }
 
@@ -53,7 +53,6 @@ const DEFAULT_SETTINGS = {
 
 const VERIFICATION_STATUS = {
   VERIFIED: 'verified',
-  PARTIAL: 'partial',
   UNVERIFIED: 'unverified',
 } as const;
 
@@ -270,14 +269,8 @@ const collectVerificationSnapshot = async () => {
 
   const configuredChecks = Number(geoConfigured) + Number(ipConfigured);
   const passedChecks = Number(geoPass) + Number(ipPass);
-  const verificationStatus =
-    configuredChecks === 0
-      ? VERIFICATION_STATUS.UNVERIFIED
-      : passedChecks === configuredChecks
-        ? VERIFICATION_STATUS.VERIFIED
-        : passedChecks > 0
-          ? VERIFICATION_STATUS.PARTIAL
-          : VERIFICATION_STATUS.UNVERIFIED;
+  const isStrictMatch = configuredChecks > 0 && passedChecks === configuredChecks;
+  const verificationStatus = isStrictMatch ? VERIFICATION_STATUS.VERIFIED : VERIFICATION_STATUS.UNVERIFIED;
 
   if (configuredChecks === 0) {
     notes.push('No company GPS or IP verification rules are configured.');
@@ -285,6 +278,7 @@ const collectVerificationSnapshot = async () => {
 
   return {
     hasConfiguredRules: configuredChecks > 0,
+    isStrictMatch,
     preview: {
       detected_latitude: position.latitude,
       detected_longitude: position.longitude,
@@ -494,6 +488,11 @@ export const api = {
     const active = await api.getActiveSession();
     if (active?.session) return { error: 'You already have an active session' };
     const verification = await collectVerificationSnapshot();
+    if (!verification.hasConfiguredRules || !verification.isStrictMatch) {
+      return {
+        error: verification.preview.verification_summary || 'GPS and IP verification must both match before time in.',
+      };
+    }
     const payload = {
       user_id: profile.id,
       time_in: new Date().toISOString(),
@@ -504,14 +503,7 @@ export const api = {
     const { data, error } = await supabase.from('logs').insert(payload).select('id, user_id, time_in, time_out, total_hours, entry_type, description, check_latitude, check_longitude, check_accuracy_meters, check_ip, verification_status, verification_summary').single();
     if (error) return { error: error.message };
     await syncNotificationsForProfile(profile);
-    return {
-      success: true,
-      log: data,
-      warning:
-        !verification.hasConfiguredRules || data.verification_status === VERIFICATION_STATUS.VERIFIED
-          ? null
-          : data.verification_summary || 'This session could not be fully verified against company GPS/IP rules.',
-    };
+    return { success: true, log: data };
   },
 
   verificationPreview: async () => {
@@ -524,6 +516,12 @@ export const api = {
     const { profile } = await requireProfile();
     const active = await api.getActiveSession();
     if (!active?.session) return { error: 'No active session found' };
+    const verification = await collectVerificationSnapshot();
+    if (!verification.hasConfiguredRules || !verification.isStrictMatch) {
+      return {
+        error: verification.preview.verification_summary || 'GPS and IP verification must both match before time out.',
+      };
+    }
     const timeOut = new Date().toISOString();
     const totalHours = computeHours(active.session.time_in, timeOut, active.session.entry_type ?? 'regular');
     const { data, error } = await supabase
