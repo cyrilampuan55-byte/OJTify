@@ -51,6 +51,8 @@ const DEFAULT_SETTINGS = {
   target_hours: 600,
 };
 
+const LOGS_BATCH_SIZE = 1000;
+
 const VERIFICATION_STATUS = {
   VERIFIED: 'verified',
   UNVERIFIED: 'unverified',
@@ -348,19 +350,38 @@ const userStatsFromLogs = (logs: LogRow[]) => {
   };
 };
 
-const getLogsForUser = async (userId: string, limit?: number) => {
-  let query = supabase
-    .from('logs')
-    .select('id, user_id, time_in, time_out, total_hours, entry_type, description, check_latitude, check_longitude, check_accuracy_meters, check_ip, verification_status, verification_summary')
-    .eq('user_id', userId)
-    .order('time_in', { ascending: false });
-  if (limit) query = query.limit(limit);
-  const { data, error } = await query;
-  if (error) throw error;
-  return (data ?? []).map((log) => ({
+const withComputedHours = <T extends LogRow>(logs: T[]) =>
+  logs.map((log) => ({
     ...log,
     total_hours: computeHours(log.time_in, log.time_out, log.entry_type ?? 'regular'),
-  })) as LogRow[];
+  }));
+
+const getLogsForUser = async (userId: string, limit?: number) => {
+  const logs: LogRow[] = [];
+  let from = 0;
+
+  while (true) {
+    const remaining = limit ? Math.max(limit - logs.length, 0) : LOGS_BATCH_SIZE;
+    if (limit && remaining === 0) break;
+
+    const batchSize = limit ? Math.min(remaining, LOGS_BATCH_SIZE) : LOGS_BATCH_SIZE;
+    const { data, error } = await supabase
+      .from('logs')
+      .select('id, user_id, time_in, time_out, total_hours, entry_type, description, check_latitude, check_longitude, check_accuracy_meters, check_ip, verification_status, verification_summary')
+      .eq('user_id', userId)
+      .order('time_in', { ascending: false })
+      .range(from, from + batchSize - 1);
+
+    if (error) throw error;
+
+    const batch = (data ?? []) as LogRow[];
+    logs.push(...batch);
+
+    if (batch.length < batchSize) break;
+    from += batchSize;
+  }
+
+  return withComputedHours(logs);
 };
 
 const ensureNotification = async (
@@ -726,6 +747,16 @@ export const api = {
       total_hours: computeHours(time_in, time_out, options.entry_type ?? 'regular'),
       entry_type: options.entry_type ?? 'regular',
       description: options.description ?? null,
+      ...(profile.role === 'admin'
+        ? {
+            verification_status: VERIFICATION_STATUS.VERIFIED,
+            verification_summary: 'Admin added entry.',
+            check_latitude: null,
+            check_longitude: null,
+            check_accuracy_meters: null,
+            check_ip: null,
+          }
+        : {}),
     };
     const { data, error } = await supabase
       .from('logs')
@@ -872,12 +903,24 @@ export const api = {
       .order('name');
     if (error) throw error;
 
-    const { data: logs, error: logsError } = await supabase
-      .from('logs')
-      .select('id, user_id, time_in, time_out, total_hours, entry_type, description, check_latitude, check_longitude, check_accuracy_meters, check_ip, verification_status, verification_summary');
-    if (logsError) throw logsError;
+    const allLogs: LogRow[] = [];
+    let from = 0;
 
-    const allLogs = (logs ?? []) as LogRow[];
+    while (true) {
+      const { data: logs, error: logsError } = await supabase
+        .from('logs')
+        .select('id, user_id, time_in, time_out, total_hours, entry_type, description, check_latitude, check_longitude, check_accuracy_meters, check_ip, verification_status, verification_summary')
+        .range(from, from + LOGS_BATCH_SIZE - 1);
+
+      if (logsError) throw logsError;
+
+      const batch = (logs ?? []) as LogRow[];
+      allLogs.push(...batch);
+
+      if (batch.length < LOGS_BATCH_SIZE) break;
+      from += LOGS_BATCH_SIZE;
+    }
+
     const users = (profiles ?? []).map((item) => {
       const userLogs = allLogs.filter((log) => log.user_id === item.id);
       const stats = userStatsFromLogs(userLogs);
@@ -913,19 +956,33 @@ export const api = {
       .select('id, name, email');
     if (profilesError) throw profilesError;
 
-    let query = supabase
-      .from('logs')
-      .select('id, user_id, time_in, time_out, total_hours, entry_type, description, check_latitude, check_longitude, check_accuracy_meters, check_ip, verification_status, verification_summary')
-      .order('time_in', { ascending: false });
-    if (params.limit) query = query.limit(params.limit);
-    const { data: logs, error } = await query;
-    if (error) throw error;
+    const logs: LogRow[] = [];
+    let from = 0;
+
+    while (true) {
+      const remaining = params.limit ? Math.max(params.limit - logs.length, 0) : LOGS_BATCH_SIZE;
+      if (params.limit && remaining === 0) break;
+
+      const batchSize = params.limit ? Math.min(remaining, LOGS_BATCH_SIZE) : LOGS_BATCH_SIZE;
+      const { data, error } = await supabase
+        .from('logs')
+        .select('id, user_id, time_in, time_out, total_hours, entry_type, description, check_latitude, check_longitude, check_accuracy_meters, check_ip, verification_status, verification_summary')
+        .order('time_in', { ascending: false })
+        .range(from, from + batchSize - 1);
+
+      if (error) throw error;
+
+      const batch = (data ?? []) as LogRow[];
+      logs.push(...batch);
+
+      if (batch.length < batchSize) break;
+      from += batchSize;
+    }
 
     const profileMap = new Map((profiles ?? []).map((profile) => [profile.id, profile]));
     return {
-      logs: (logs ?? []).map((log) => ({
+      logs: withComputedHours(logs).map((log) => ({
         ...log,
-        total_hours: computeHours(log.time_in, log.time_out, log.entry_type ?? 'regular'),
         profiles: profileMap.get(log.user_id) ?? null,
       })),
     };

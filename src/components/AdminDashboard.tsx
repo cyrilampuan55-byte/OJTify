@@ -74,7 +74,7 @@ const AdminDashboard: React.FC = () => {
     setSelectedUser(user);
     setLogsLoading(true);
     try {
-      const data = await api.getLogs({ userId: user.id, limit: 50 });
+      const data = await api.getLogs({ userId: user.id });
       setUserLogs(data?.logs || []);
     } catch (err) {
       console.error('Failed to fetch logs:', err);

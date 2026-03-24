@@ -481,7 +481,7 @@ function AdminDash() {
   useEffect(() => api.subscribe(() => {
     fetch();
     if (selUser) {
-      api.logs({ userId: selUser.id, limit: 50 }).then(d => setUserLogs(d?.logs || [])).catch(() => {});
+      api.logs({ userId: selUser.id }).then(d => setUserLogs(d?.logs || [])).catch(() => {});
     }
   }), [fetch, selUser]);
   useEffect(() => { const t = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(t); }, []);
@@ -509,7 +509,7 @@ function AdminDash() {
     setShowAddLogPanel(false);
     try {
       const [logsData, settingsData] = await Promise.all([
-        api.logs({ userId: u.id, limit: 50 }),
+        api.logs({ userId: u.id }),
         api.getUserSettings(u.id),
       ]);
       setUserLogs(logsData?.logs || []);
@@ -595,7 +595,7 @@ function AdminDash() {
         return;
       }
       const [logsData, usersData] = await Promise.all([
-        api.logs({ userId: selUser.id, limit: 50 }),
+        api.logs({ userId: selUser.id }),
         api.adminUsers(),
       ]);
       setUserLogs(logsData?.logs || []);
@@ -619,7 +619,7 @@ function AdminDash() {
         return;
       }
       if (selUser) {
-        const d = await api.logs({ userId: selUser.id, limit: 50 });
+        const d = await api.logs({ userId: selUser.id });
         setUserLogs(d?.logs || []);
       }
       await fetch();
