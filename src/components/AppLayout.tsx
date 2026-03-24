@@ -773,7 +773,9 @@ const AppLayout: React.FC = () => {
               )}
             </div>
           )}
-          <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-cyan-500 flex items-center justify-center text-white text-sm font-bold">{user.name.charAt(0).toUpperCase()}</div>
+          {user.role === 'admin' && (
+            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-cyan-500 flex items-center justify-center text-white text-sm font-bold">{user.name.charAt(0).toUpperCase()}</div>
+          )}
           <button onClick={handleLogout} className="w-9 h-9 rounded-full border border-slate-700/50 flex items-center justify-center text-slate-400 hover:text-red-400 hover:border-red-500/30 transition-all"><LogOut className="w-4 h-4" /></button>
         </div>
       </header>
