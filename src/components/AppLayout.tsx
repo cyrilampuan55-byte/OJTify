@@ -108,8 +108,6 @@ function TimerCard({ onSessionChange }: { onSessionChange: () => void }) {
   const [elapsed, setElapsed] = useState(0);
   const [loading, setLoading] = useState(false);
   const [initDone, setInitDone] = useState(false);
-  const [verificationDebug, setVerificationDebug] = useState<any>(null);
-  const [checkingVerification, setCheckingVerification] = useState(false);
 
   useEffect(() => { const t = setInterval(() => setNow(new Date()), 1000); return () => clearInterval(t); }, []);
   useEffect(() => {
@@ -125,19 +123,6 @@ function TimerCard({ onSessionChange }: { onSessionChange: () => void }) {
   const ampm = h >= 12 ? 'PM' : 'AM', h12 = (h % 12 || 12).toString().padStart(2, '0');
   const fmtDate = now.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
   const fmtElapsed = (sec: number) => `${Math.floor(sec / 3600).toString().padStart(2, '0')}:${Math.floor((sec % 3600) / 60).toString().padStart(2, '0')}:${(sec % 60).toString().padStart(2, '0')}`;
-  const formatCoordinate = (value: number | null | undefined) => value == null ? 'Unavailable' : value.toFixed(6);
-
-  const handleVerificationCheck = async () => {
-    setCheckingVerification(true);
-    try {
-      const preview = await api.verificationPreview();
-      setVerificationDebug(preview);
-    } catch (e: any) {
-      alert(e?.message || 'Failed to check GPS/IP verification.');
-    } finally {
-      setCheckingVerification(false);
-    }
-  };
 
   const handleTimeIn = async () => {
     setLoading(true);
@@ -178,44 +163,6 @@ function TimerCard({ onSessionChange }: { onSessionChange: () => void }) {
           <button onClick={handleTimeIn} disabled={loading || !initDone} className="inline-flex items-center gap-3 px-10 py-4 bg-gradient-to-r from-cyan-500 to-blue-600 text-white font-semibold rounded-2xl hover:from-cyan-400 hover:to-blue-500 transition-all shadow-lg shadow-cyan-500/20 disabled:opacity-50">
             {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Play className="w-5 h-5" />} Time In
           </button>
-        )}
-      </div>
-      <div className="mt-6 border-t border-slate-700/40 pt-4 text-left">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <p className="text-sm font-semibold text-slate-300">Verification Debug</p>
-            <p className="text-xs text-slate-500">Use this to confirm the GPS and IP values the app is actually seeing.</p>
-          </div>
-          <button onClick={handleVerificationCheck} disabled={checkingVerification} className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-700/50 px-4 py-2 text-sm text-slate-300 hover:text-white hover:border-slate-600 transition-all disabled:opacity-50">
-            {checkingVerification ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
-            {checkingVerification ? 'Checking...' : 'Check GPS / IP'}
-          </button>
-        </div>
-        {verificationDebug && (
-          <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3">
-            <div className="rounded-xl bg-slate-800/30 border border-slate-700/30 p-4">
-              <p className="text-xs text-slate-500 mb-2">Detected Position</p>
-              <p className="text-sm text-white">Lat: <span className="font-mono">{formatCoordinate(verificationDebug.detected_latitude)}</span></p>
-              <p className="text-sm text-white">Lng: <span className="font-mono">{formatCoordinate(verificationDebug.detected_longitude)}</span></p>
-              <p className="text-sm text-white">Accuracy: <span className="font-mono">{verificationDebug.detected_accuracy_meters == null ? 'Unavailable' : `${Number(verificationDebug.detected_accuracy_meters).toFixed(0)} m`}</span></p>
-              <p className="text-sm text-white">IP: <span className="font-mono">{verificationDebug.detected_ip || 'Unavailable'}</span></p>
-            </div>
-            <div className="rounded-xl bg-slate-800/30 border border-slate-700/30 p-4">
-              <p className="text-xs text-slate-500 mb-2">Company Rules</p>
-              <p className="text-sm text-white">Lat: <span className="font-mono">{formatCoordinate(verificationDebug.company_latitude)}</span></p>
-              <p className="text-sm text-white">Lng: <span className="font-mono">{formatCoordinate(verificationDebug.company_longitude)}</span></p>
-              <p className="text-sm text-white">Radius: <span className="font-mono">{verificationDebug.company_radius_meters} m</span></p>
-              <p className="text-sm text-white">Distance: <span className="font-mono">{verificationDebug.distance_meters == null ? 'Unavailable' : `${Number(verificationDebug.distance_meters).toFixed(0)} m`}</span></p>
-            </div>
-            <div className="rounded-xl bg-slate-800/30 border border-slate-700/30 p-4 md:col-span-2">
-              <div className="flex flex-wrap items-center gap-2 mb-2">
-                <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium ${verificationBadgeClass(verificationDebug.verification_status)}`}>{verificationLabel(verificationDebug.verification_status)}</span>
-                <span className="text-xs text-slate-500">GPS: {verificationDebug.geo_pass == null ? 'Not configured' : verificationDebug.geo_pass ? 'Pass' : 'Fail'}</span>
-                <span className="text-xs text-slate-500">IP: {verificationDebug.ip_pass == null ? 'Not configured' : verificationDebug.ip_pass ? 'Pass' : 'Fail'}</span>
-              </div>
-              <p className="text-xs text-slate-400">{verificationDebug.verification_summary}</p>
-            </div>
-          </div>
         )}
       </div>
     </div>

@@ -114,8 +114,30 @@ const getSettingsForUser = async (userId: string) => {
 
 const computeHours = (timeIn: string, timeOut: string | null) => {
   if (!timeOut) return 0;
-  const diffMs = new Date(timeOut).getTime() - new Date(timeIn).getTime();
-  return diffMs > 0 ? Number((diffMs / 3_600_000).toFixed(2)) : 0;
+  const start = new Date(timeIn);
+  const end = new Date(timeOut);
+  const diffMs = end.getTime() - start.getTime();
+  if (diffMs <= 0) return 0;
+
+  let breakOverlapMs = 0;
+  const cursor = new Date(start.getFullYear(), start.getMonth(), start.getDate());
+  const lastDay = new Date(end.getFullYear(), end.getMonth(), end.getDate());
+
+  while (cursor.getTime() <= lastDay.getTime()) {
+    const breakStart = new Date(cursor.getFullYear(), cursor.getMonth(), cursor.getDate(), 12, 0, 0, 0);
+    const breakEnd = new Date(cursor.getFullYear(), cursor.getMonth(), cursor.getDate(), 13, 0, 0, 0);
+    const overlapStart = Math.max(start.getTime(), breakStart.getTime());
+    const overlapEnd = Math.min(end.getTime(), breakEnd.getTime());
+
+    if (overlapEnd > overlapStart) {
+      breakOverlapMs += overlapEnd - overlapStart;
+    }
+
+    cursor.setDate(cursor.getDate() + 1);
+  }
+
+  const workedMs = Math.max(diffMs - breakOverlapMs, 0);
+  return Number((workedMs / 3_600_000).toFixed(2));
 };
 
 const getCurrentPosition = async () => {
