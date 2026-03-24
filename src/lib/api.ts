@@ -695,6 +695,42 @@ export const api = {
     return { success: true, settings: data };
   },
 
+  addUserEntry: async (userId: string, time_in: string, time_out: string) => {
+    const { profile } = await requireProfile();
+    const targetUserId = profile.role === 'admin' ? userId : profile.id;
+    if (new Date(time_out).getTime() <= new Date(time_in).getTime()) {
+      return { error: 'Time out must be after time in' };
+    }
+
+    const targetProfile =
+      profile.role === 'admin' && targetUserId !== profile.id
+        ? await supabase
+            .from('profiles')
+            .select('id, name, email, role, target_hours')
+            .eq('id', targetUserId)
+            .single()
+        : { data: profile, error: null };
+
+    if (targetProfile.error || !targetProfile.data) {
+      return { error: targetProfile.error?.message || 'Profile not found' };
+    }
+
+    const payload = {
+      user_id: targetUserId,
+      time_in,
+      time_out,
+      total_hours: computeHours(time_in, time_out),
+    };
+    const { data, error } = await supabase
+      .from('logs')
+      .insert(payload)
+      .select('id, user_id, time_in, time_out, total_hours, check_latitude, check_longitude, check_accuracy_meters, check_ip, verification_status, verification_summary')
+      .single();
+    if (error) return { error: error.message };
+    await syncNotificationsForProfile(targetProfile.data as ProfileRow);
+    return { success: true, log: data };
+  },
+
   addEntry: async (time_in: string, time_out: string) => {
     const { profile } = await requireProfile();
     if (new Date(time_out).getTime() <= new Date(time_in).getTime()) {
