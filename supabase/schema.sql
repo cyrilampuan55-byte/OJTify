@@ -27,6 +27,13 @@ create table if not exists public.logs (
   created_at timestamptz not null default now()
 );
 
+alter table public.logs add column if not exists check_latitude double precision null;
+alter table public.logs add column if not exists check_longitude double precision null;
+alter table public.logs add column if not exists check_accuracy_meters double precision null;
+alter table public.logs add column if not exists check_ip text null;
+alter table public.logs add column if not exists verification_status text not null default 'unverified';
+alter table public.logs add column if not exists verification_summary text null;
+
 create index if not exists logs_user_id_idx on public.logs(user_id);
 create index if not exists logs_time_in_idx on public.logs(time_in desc);
 

@@ -10,9 +10,39 @@ const clearToken = () => localStorage.removeItem('ojt_token');
 /* ─── types ─── */
 interface UserT { id: string; name: string; email: string; role: string; target_hours: number }
 interface SettingsT { excluded_days: string[]; target_end_date: string | null; target_hours: number }
-interface LogT { id: string; time_in: string; time_out: string | null; total_hours: number }
+interface LogT {
+  id: string;
+  time_in: string;
+  time_out: string | null;
+  total_hours: number;
+  check_ip?: string | null;
+  verification_status?: 'verified' | 'partial' | 'unverified';
+  verification_summary?: string | null;
+}
 interface StatsT { today: number; week: number; month: number; total: number; daysWorked: number }
 interface NotificationT { id: string; type: string; title: string; message: string; created_at: string; read_at: string | null }
+
+const verificationBadgeClass = (status?: LogT['verification_status']) => {
+  switch (status) {
+    case 'verified':
+      return 'bg-emerald-500/15 border-emerald-500/30 text-emerald-400';
+    case 'partial':
+      return 'bg-amber-500/15 border-amber-500/30 text-amber-400';
+    default:
+      return 'bg-rose-500/15 border-rose-500/30 text-rose-400';
+  }
+};
+
+const verificationLabel = (status?: LogT['verification_status']) => {
+  switch (status) {
+    case 'verified':
+      return 'Verified';
+    case 'partial':
+      return 'Partial';
+    default:
+      return 'Unverified';
+  }
+};
 
 /* ═══════════════════════════════════════════════════════════════════
    LOGIN PAGE
@@ -78,6 +108,8 @@ function TimerCard({ onSessionChange }: { onSessionChange: () => void }) {
   const [elapsed, setElapsed] = useState(0);
   const [loading, setLoading] = useState(false);
   const [initDone, setInitDone] = useState(false);
+  const [verificationDebug, setVerificationDebug] = useState<any>(null);
+  const [checkingVerification, setCheckingVerification] = useState(false);
 
   useEffect(() => { const t = setInterval(() => setNow(new Date()), 1000); return () => clearInterval(t); }, []);
   useEffect(() => {
@@ -93,8 +125,39 @@ function TimerCard({ onSessionChange }: { onSessionChange: () => void }) {
   const ampm = h >= 12 ? 'PM' : 'AM', h12 = (h % 12 || 12).toString().padStart(2, '0');
   const fmtDate = now.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
   const fmtElapsed = (sec: number) => `${Math.floor(sec / 3600).toString().padStart(2, '0')}:${Math.floor((sec % 3600) / 60).toString().padStart(2, '0')}:${(sec % 60).toString().padStart(2, '0')}`;
+  const formatCoordinate = (value: number | null | undefined) => value == null ? 'Unavailable' : value.toFixed(6);
 
-  const handleTimeIn = async () => { setLoading(true); try { const d = await api.timeIn(); if (d?.log) { setSessionStart(new Date(d.log.time_in)); setWorking(true); setElapsed(0); onSessionChange(); } else if (d?.error) alert(d.error); } catch (e: any) { alert(e?.message || 'Failed'); } finally { setLoading(false); } };
+  const handleVerificationCheck = async () => {
+    setCheckingVerification(true);
+    try {
+      const preview = await api.verificationPreview();
+      setVerificationDebug(preview);
+    } catch (e: any) {
+      alert(e?.message || 'Failed to check GPS/IP verification.');
+    } finally {
+      setCheckingVerification(false);
+    }
+  };
+
+  const handleTimeIn = async () => {
+    setLoading(true);
+    try {
+      const d = await api.timeIn();
+      if (d?.log) {
+        setSessionStart(new Date(d.log.time_in));
+        setWorking(true);
+        setElapsed(0);
+        onSessionChange();
+        if (d.warning) alert(`Time in recorded.\n\nVerification note: ${d.warning}`);
+      } else if (d?.error) {
+        alert(d.error);
+      }
+    } catch (e: any) {
+      alert(e?.message || 'Failed');
+    } finally {
+      setLoading(false);
+    }
+  };
   const handleTimeOut = async () => { setLoading(true); try { const d = await api.timeOut(); if (d?.success) { setWorking(false); setSessionStart(null); setElapsed(0); onSessionChange(); } else if (d?.error) alert(d.error); } catch (e: any) { alert(e?.message || 'Failed'); } finally { setLoading(false); } };
 
   return (
@@ -115,6 +178,44 @@ function TimerCard({ onSessionChange }: { onSessionChange: () => void }) {
           <button onClick={handleTimeIn} disabled={loading || !initDone} className="inline-flex items-center gap-3 px-10 py-4 bg-gradient-to-r from-cyan-500 to-blue-600 text-white font-semibold rounded-2xl hover:from-cyan-400 hover:to-blue-500 transition-all shadow-lg shadow-cyan-500/20 disabled:opacity-50">
             {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Play className="w-5 h-5" />} Time In
           </button>
+        )}
+      </div>
+      <div className="mt-6 border-t border-slate-700/40 pt-4 text-left">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="text-sm font-semibold text-slate-300">Verification Debug</p>
+            <p className="text-xs text-slate-500">Use this to confirm the GPS and IP values the app is actually seeing.</p>
+          </div>
+          <button onClick={handleVerificationCheck} disabled={checkingVerification} className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-700/50 px-4 py-2 text-sm text-slate-300 hover:text-white hover:border-slate-600 transition-all disabled:opacity-50">
+            {checkingVerification ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+            {checkingVerification ? 'Checking...' : 'Check GPS / IP'}
+          </button>
+        </div>
+        {verificationDebug && (
+          <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div className="rounded-xl bg-slate-800/30 border border-slate-700/30 p-4">
+              <p className="text-xs text-slate-500 mb-2">Detected Position</p>
+              <p className="text-sm text-white">Lat: <span className="font-mono">{formatCoordinate(verificationDebug.detected_latitude)}</span></p>
+              <p className="text-sm text-white">Lng: <span className="font-mono">{formatCoordinate(verificationDebug.detected_longitude)}</span></p>
+              <p className="text-sm text-white">Accuracy: <span className="font-mono">{verificationDebug.detected_accuracy_meters == null ? 'Unavailable' : `${Number(verificationDebug.detected_accuracy_meters).toFixed(0)} m`}</span></p>
+              <p className="text-sm text-white">IP: <span className="font-mono">{verificationDebug.detected_ip || 'Unavailable'}</span></p>
+            </div>
+            <div className="rounded-xl bg-slate-800/30 border border-slate-700/30 p-4">
+              <p className="text-xs text-slate-500 mb-2">Company Rules</p>
+              <p className="text-sm text-white">Lat: <span className="font-mono">{formatCoordinate(verificationDebug.company_latitude)}</span></p>
+              <p className="text-sm text-white">Lng: <span className="font-mono">{formatCoordinate(verificationDebug.company_longitude)}</span></p>
+              <p className="text-sm text-white">Radius: <span className="font-mono">{verificationDebug.company_radius_meters} m</span></p>
+              <p className="text-sm text-white">Distance: <span className="font-mono">{verificationDebug.distance_meters == null ? 'Unavailable' : `${Number(verificationDebug.distance_meters).toFixed(0)} m`}</span></p>
+            </div>
+            <div className="rounded-xl bg-slate-800/30 border border-slate-700/30 p-4 md:col-span-2">
+              <div className="flex flex-wrap items-center gap-2 mb-2">
+                <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium ${verificationBadgeClass(verificationDebug.verification_status)}`}>{verificationLabel(verificationDebug.verification_status)}</span>
+                <span className="text-xs text-slate-500">GPS: {verificationDebug.geo_pass == null ? 'Not configured' : verificationDebug.geo_pass ? 'Pass' : 'Fail'}</span>
+                <span className="text-xs text-slate-500">IP: {verificationDebug.ip_pass == null ? 'Not configured' : verificationDebug.ip_pass ? 'Pass' : 'Fail'}</span>
+              </div>
+              <p className="text-xs text-slate-400">{verificationDebug.verification_summary}</p>
+            </div>
+          </div>
         )}
       </div>
     </div>
@@ -218,7 +319,15 @@ function RecentEntries({ logs }: { logs: LogT[] }) {
       <div className="space-y-2 max-h-80 overflow-y-auto">
         {logs.length === 0 ? <div className="text-center py-10"><Layers className="w-10 h-10 text-slate-600 mx-auto mb-3" /><p className="text-slate-500 text-sm">No time entries yet.</p><p className="text-slate-600 text-xs mt-1">Click "Time In" to start tracking!</p></div> : logs.slice(0, 20).map(l => (
           <div key={l.id} className="flex items-center gap-3 px-3 py-2.5 rounded-lg bg-slate-800/30">
-            <div className="flex-1 min-w-0"><div className="text-xs text-slate-400">{new Date(l.time_in).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}</div><div className="text-sm text-slate-300">{new Date(l.time_in).toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'})}{l.time_out ? <span> - {new Date(l.time_out).toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'})}</span> : <span className="text-emerald-400 ml-2 text-xs">Active</span>}</div></div>
+            <div className="flex-1 min-w-0">
+              <div className="text-xs text-slate-400">{new Date(l.time_in).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}</div>
+              <div className="text-sm text-slate-300">{new Date(l.time_in).toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'})}{l.time_out ? <span> - {new Date(l.time_out).toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'})}</span> : <span className="text-emerald-400 ml-2 text-xs">Active</span>}</div>
+              <div className="mt-1 flex items-center gap-2">
+                <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium ${verificationBadgeClass(l.verification_status)}`}>{verificationLabel(l.verification_status)}</span>
+                {l.check_ip && <span className="text-[11px] text-slate-500">{l.check_ip}</span>}
+              </div>
+              {l.verification_summary && <p className="mt-1 text-[11px] text-slate-500">{l.verification_summary}</p>}
+            </div>
             <div className="text-sm font-mono text-cyan-400">{(l.total_hours||0).toFixed(2)} hrs</div>
           </div>
         ))}
@@ -391,7 +500,7 @@ function AdminDash() {
         ))}
         {filtered.length === 0 && <div className="col-span-full text-center py-10"><Users className="w-10 h-10 text-slate-600 mx-auto mb-3" /><p className="text-slate-500 text-sm">No students found</p></div>}
       </div></div>
-      {selUser && <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4"><div className="bg-[#111827] border border-slate-700/50 rounded-2xl w-full max-w-3xl max-h-[80vh] overflow-hidden flex flex-col"><div className="flex items-center justify-between p-6 border-b border-slate-700/40"><div><h3 className="text-lg font-semibold text-white">{selUser.name}'s Logs</h3><p className="text-sm text-slate-500">{selUser.email}</p></div><button onClick={() => { cancelEditLog(); setSelUser(null); }} className="text-slate-400 hover:text-white"><X className="w-5 h-5" /></button></div><div className="flex-1 overflow-y-auto p-6 space-y-6"><div className="bg-slate-800/30 rounded-xl p-4 border border-slate-700/30"><div className="flex items-center justify-between gap-3 mb-4"><h4 className="text-sm font-semibold text-slate-300 tracking-wider">OJT SETTINGS</h4><button onClick={saveStudentSettings} disabled={savingSettings} className="px-3 py-1.5 text-xs rounded-lg bg-cyan-500 text-white hover:bg-cyan-400 transition-all disabled:opacity-50">{savingSettings ? 'Saving...' : 'Save Settings'}</button></div><div className="grid grid-cols-1 md:grid-cols-2 gap-4"><div><label className="block text-xs text-slate-400 mb-1.5">Target OJT Hours</label><input type="number" min={1} value={userSettings.target_hours} onChange={e => setUserSettings(prev => ({ ...prev, target_hours: Number(e.target.value) || 0 }))} className="w-full px-3 py-2 bg-[#0d1117] border border-slate-700/50 rounded-lg text-white text-sm focus:outline-none focus:border-cyan-500/50" /></div><div><label className="block text-xs text-slate-400 mb-1.5">Target End Date</label><input type="date" value={userSettings.target_end_date || ''} onChange={e => setUserSettings(prev => ({ ...prev, target_end_date: e.target.value || null }))} className="w-full px-3 py-2 bg-[#0d1117] border border-slate-700/50 rounded-lg text-white text-sm focus:outline-none focus:border-cyan-500/50" /></div></div><div className="mt-4"><label className="block text-xs text-slate-400 mb-2">Exclude Days from Calculation</label><div className="grid grid-cols-4 sm:grid-cols-7 gap-2">{['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map(day => <button key={day} onClick={() => toggleExcludedDay(day)} className={`py-2 text-xs rounded-lg border transition-all ${userSettings.excluded_days.includes(day) ? 'bg-rose-500/20 border-rose-500/30 text-rose-400' : 'bg-slate-900/60 border-slate-700/40 text-slate-400 hover:text-white'}`}>{day}</button>)}</div></div></div><div className="space-y-3">{userLogs.map((l: any) => <div key={l.id} className="px-4 py-3 bg-slate-800/30 rounded-lg">{editingLogId === l.id ? <div className="space-y-3"><div className="grid grid-cols-1 sm:grid-cols-3 gap-3"><input type="date" value={editDate} onChange={e => setEditDate(e.target.value)} className="w-full px-3 py-2 bg-[#0d1117] border border-slate-700/50 rounded-lg text-white text-sm focus:outline-none focus:border-cyan-500/50" /><input type="time" value={editIn} onChange={e => setEditIn(e.target.value)} className="w-full px-3 py-2 bg-[#0d1117] border border-slate-700/50 rounded-lg text-white text-sm focus:outline-none focus:border-cyan-500/50" /><input type="time" value={editOut} onChange={e => setEditOut(e.target.value)} className="w-full px-3 py-2 bg-[#0d1117] border border-slate-700/50 rounded-lg text-white text-sm focus:outline-none focus:border-cyan-500/50" /></div><div className="flex items-center justify-between gap-3"><span className="text-xs text-slate-500">Leave time out blank to keep the session active.</span><div className="flex gap-2"><button onClick={cancelEditLog} className="px-3 py-1.5 text-xs rounded-lg border border-slate-700/50 text-slate-400 hover:text-white transition-all">Cancel</button><button onClick={saveEditLog} disabled={savingLog} className="px-3 py-1.5 text-xs rounded-lg bg-cyan-500 text-white hover:bg-cyan-400 transition-all disabled:opacity-50">{savingLog ? 'Saving...' : 'Save'}</button></div></div></div> : <div className="flex items-center justify-between gap-4"><div><div className="text-sm text-white">{new Date(l.time_in).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}</div><div className="text-xs text-slate-400">{new Date(l.time_in).toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'})}{l.time_out?<> - {new Date(l.time_out).toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'})}</>:<span className="text-emerald-400 ml-2">Active</span>}</div></div><div className="flex items-center gap-3"><span className="text-sm font-mono text-cyan-400">{(l.total_hours||0).toFixed(2)} hrs</span><button onClick={() => startEditLog(l)} className="px-3 py-1.5 text-xs rounded-lg border border-slate-700/50 text-slate-400 hover:text-cyan-400 transition-all">Edit</button></div></div>}</div>)}{userLogs.length===0&&<p className="text-center text-slate-500 py-10">No logs found</p>}</div></div><div className="p-4 border-t border-slate-700/40 text-center"><span className="text-sm text-slate-400">Total: <span className="text-cyan-400 font-mono font-bold">{selectedUserTotal.toFixed(2)} hrs</span> / {userSettings.target_hours} hrs</span></div></div></div>}
+      {selUser && <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4"><div className="bg-[#111827] border border-slate-700/50 rounded-2xl w-full max-w-3xl max-h-[80vh] overflow-hidden flex flex-col"><div className="flex items-center justify-between p-6 border-b border-slate-700/40"><div><h3 className="text-lg font-semibold text-white">{selUser.name}'s Logs</h3><p className="text-sm text-slate-500">{selUser.email}</p></div><button onClick={() => { cancelEditLog(); setSelUser(null); }} className="text-slate-400 hover:text-white"><X className="w-5 h-5" /></button></div><div className="flex-1 overflow-y-auto p-6 space-y-6"><div className="bg-slate-800/30 rounded-xl p-4 border border-slate-700/30"><div className="flex items-center justify-between gap-3 mb-4"><h4 className="text-sm font-semibold text-slate-300 tracking-wider">OJT SETTINGS</h4><button onClick={saveStudentSettings} disabled={savingSettings} className="px-3 py-1.5 text-xs rounded-lg bg-cyan-500 text-white hover:bg-cyan-400 transition-all disabled:opacity-50">{savingSettings ? 'Saving...' : 'Save Settings'}</button></div><div className="grid grid-cols-1 md:grid-cols-2 gap-4"><div><label className="block text-xs text-slate-400 mb-1.5">Target OJT Hours</label><input type="number" min={1} value={userSettings.target_hours} onChange={e => setUserSettings(prev => ({ ...prev, target_hours: Number(e.target.value) || 0 }))} className="w-full px-3 py-2 bg-[#0d1117] border border-slate-700/50 rounded-lg text-white text-sm focus:outline-none focus:border-cyan-500/50" /></div><div><label className="block text-xs text-slate-400 mb-1.5">Target End Date</label><input type="date" value={userSettings.target_end_date || ''} onChange={e => setUserSettings(prev => ({ ...prev, target_end_date: e.target.value || null }))} className="w-full px-3 py-2 bg-[#0d1117] border border-slate-700/50 rounded-lg text-white text-sm focus:outline-none focus:border-cyan-500/50" /></div></div><div className="mt-4"><label className="block text-xs text-slate-400 mb-2">Exclude Days from Calculation</label><div className="grid grid-cols-4 sm:grid-cols-7 gap-2">{['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map(day => <button key={day} onClick={() => toggleExcludedDay(day)} className={`py-2 text-xs rounded-lg border transition-all ${userSettings.excluded_days.includes(day) ? 'bg-rose-500/20 border-rose-500/30 text-rose-400' : 'bg-slate-900/60 border-slate-700/40 text-slate-400 hover:text-white'}`}>{day}</button>)}</div></div></div><div className="space-y-3">{userLogs.map((l: any) => <div key={l.id} className="px-4 py-3 bg-slate-800/30 rounded-lg">{editingLogId === l.id ? <div className="space-y-3"><div className="grid grid-cols-1 sm:grid-cols-3 gap-3"><input type="date" value={editDate} onChange={e => setEditDate(e.target.value)} className="w-full px-3 py-2 bg-[#0d1117] border border-slate-700/50 rounded-lg text-white text-sm focus:outline-none focus:border-cyan-500/50" /><input type="time" value={editIn} onChange={e => setEditIn(e.target.value)} className="w-full px-3 py-2 bg-[#0d1117] border border-slate-700/50 rounded-lg text-white text-sm focus:outline-none focus:border-cyan-500/50" /><input type="time" value={editOut} onChange={e => setEditOut(e.target.value)} className="w-full px-3 py-2 bg-[#0d1117] border border-slate-700/50 rounded-lg text-white text-sm focus:outline-none focus:border-cyan-500/50" /></div><div className="flex items-center justify-between gap-3"><span className="text-xs text-slate-500">Leave time out blank to keep the session active.</span><div className="flex gap-2"><button onClick={cancelEditLog} className="px-3 py-1.5 text-xs rounded-lg border border-slate-700/50 text-slate-400 hover:text-white transition-all">Cancel</button><button onClick={saveEditLog} disabled={savingLog} className="px-3 py-1.5 text-xs rounded-lg bg-cyan-500 text-white hover:bg-cyan-400 transition-all disabled:opacity-50">{savingLog ? 'Saving...' : 'Save'}</button></div></div></div> : <div className="flex items-center justify-between gap-4"><div className="min-w-0"><div className="text-sm text-white">{new Date(l.time_in).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}</div><div className="text-xs text-slate-400">{new Date(l.time_in).toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'})}{l.time_out?<> - {new Date(l.time_out).toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'})}</>:<span className="text-emerald-400 ml-2">Active</span>}</div><div className="mt-2 flex flex-wrap items-center gap-2"><span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium ${verificationBadgeClass(l.verification_status)}`}>{verificationLabel(l.verification_status)}</span>{l.check_ip && <span className="text-[11px] text-slate-500">{l.check_ip}</span>}</div>{l.verification_summary && <p className="mt-1 text-[11px] text-slate-500">{l.verification_summary}</p>}</div><div className="flex items-center gap-3"><span className="text-sm font-mono text-cyan-400">{(l.total_hours||0).toFixed(2)} hrs</span><button onClick={() => startEditLog(l)} className="px-3 py-1.5 text-xs rounded-lg border border-slate-700/50 text-slate-400 hover:text-cyan-400 transition-all">Edit</button></div></div>}</div>)}{userLogs.length===0&&<p className="text-center text-slate-500 py-10">No logs found</p>}</div></div><div className="p-4 border-t border-slate-700/40 text-center"><span className="text-sm text-slate-400">Total: <span className="text-cyan-400 font-mono font-bold">{selectedUserTotal.toFixed(2)} hrs</span> / {userSettings.target_hours} hrs</span></div></div></div>}
     </div>
   );
 }

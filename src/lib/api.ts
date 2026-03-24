@@ -24,6 +24,12 @@ interface LogRow {
   time_in: string;
   time_out: string | null;
   total_hours: number;
+  check_latitude?: number | null;
+  check_longitude?: number | null;
+  check_accuracy_meters?: number | null;
+  check_ip?: string | null;
+  verification_status?: 'verified' | 'partial' | 'unverified';
+  verification_summary?: string | null;
 }
 
 interface NotificationRow {
@@ -41,6 +47,28 @@ const DEFAULT_SETTINGS = {
   excluded_days: ['Sun'],
   target_end_date: null,
   target_hours: 600,
+};
+
+const VERIFICATION_STATUS = {
+  VERIFIED: 'verified',
+  PARTIAL: 'partial',
+  UNVERIFIED: 'unverified',
+} as const;
+
+const toNumberOrNull = (value: string | undefined) => {
+  if (!value) return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+};
+
+const verificationConfig = {
+  companyLatitude: toNumberOrNull(import.meta.env.VITE_COMPANY_LATITUDE),
+  companyLongitude: toNumberOrNull(import.meta.env.VITE_COMPANY_LONGITUDE),
+  companyRadiusMeters: toNumberOrNull(import.meta.env.VITE_COMPANY_RADIUS_METERS) ?? 150,
+  allowedIps: String(import.meta.env.VITE_ALLOWED_IPS || '')
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean),
 };
 
 const authRedirectUrl =
@@ -90,6 +118,171 @@ const computeHours = (timeIn: string, timeOut: string | null) => {
   return diffMs > 0 ? Number((diffMs / 3_600_000).toFixed(2)) : 0;
 };
 
+const getCurrentPosition = async () => {
+  if (typeof window === 'undefined' || !('geolocation' in navigator)) {
+    return { latitude: null, longitude: null, accuracy: null, error: 'GPS is not available on this device.' };
+  }
+
+  return new Promise<{ latitude: number | null; longitude: number | null; accuracy: number | null; error: string | null }>((resolve) => {
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        resolve({
+          latitude: position.coords.latitude,
+          longitude: position.coords.longitude,
+          accuracy: position.coords.accuracy,
+          error: null,
+        });
+      },
+      (error) => {
+        resolve({
+          latitude: null,
+          longitude: null,
+          accuracy: null,
+          error: error.message || 'Unable to read GPS position.',
+        });
+      },
+      {
+        enableHighAccuracy: true,
+        timeout: 10000,
+        maximumAge: 60000,
+      },
+    );
+  });
+};
+
+const getPublicIp = async () => {
+  try {
+    const response = await fetch('https://api.ipify.org?format=json', { cache: 'no-store' });
+    if (!response.ok) throw new Error('Unable to resolve public IP.');
+    const payload = await response.json();
+    return { ip: typeof payload.ip === 'string' ? payload.ip : null, error: null };
+  } catch (error: any) {
+    return { ip: null, error: error?.message || 'Unable to resolve public IP.' };
+  }
+};
+
+const toIPv4Int = (value: string) => {
+  const parts = value.split('.');
+  if (parts.length !== 4) return null;
+  const numbers = parts.map((part) => Number(part));
+  if (numbers.some((part) => !Number.isInteger(part) || part < 0 || part > 255)) return null;
+  return numbers.reduce((result, part) => (result << 8) + part, 0) >>> 0;
+};
+
+const ipMatchesRule = (ip: string, rule: string) => {
+  if (rule === ip) return true;
+  if (!rule.includes('/')) return false;
+  const [network, prefixValue] = rule.split('/');
+  const prefix = Number(prefixValue);
+  const ipInt = toIPv4Int(ip);
+  const networkInt = toIPv4Int(network);
+  if (ipInt === null || networkInt === null || !Number.isInteger(prefix) || prefix < 0 || prefix > 32) {
+    return false;
+  }
+  const mask = prefix === 0 ? 0 : (0xffffffff << (32 - prefix)) >>> 0;
+  return (ipInt & mask) === (networkInt & mask);
+};
+
+const distanceInMeters = (latitudeA: number, longitudeA: number, latitudeB: number, longitudeB: number) => {
+  const earthRadius = 6371000;
+  const toRadians = (value: number) => (value * Math.PI) / 180;
+  const deltaLat = toRadians(latitudeB - latitudeA);
+  const deltaLng = toRadians(longitudeB - longitudeA);
+  const a =
+    Math.sin(deltaLat / 2) * Math.sin(deltaLat / 2) +
+    Math.cos(toRadians(latitudeA)) * Math.cos(toRadians(latitudeB)) * Math.sin(deltaLng / 2) * Math.sin(deltaLng / 2);
+  return earthRadius * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
+};
+
+const collectVerificationSnapshot = async () => {
+  const [position, ip] = await Promise.all([getCurrentPosition(), getPublicIp()]);
+
+  const geoConfigured =
+    verificationConfig.companyLatitude !== null &&
+    verificationConfig.companyLongitude !== null &&
+    verificationConfig.companyRadiusMeters !== null;
+  const ipConfigured = verificationConfig.allowedIps.length > 0;
+
+  let geoPass = false;
+  let ipPass = false;
+  let distanceMeters: number | null = null;
+  const notes: string[] = [];
+
+  if (geoConfigured) {
+    if (position.latitude !== null && position.longitude !== null) {
+      distanceMeters = distanceInMeters(
+        position.latitude,
+        position.longitude,
+        verificationConfig.companyLatitude as number,
+        verificationConfig.companyLongitude as number,
+      );
+      geoPass = distanceMeters <= verificationConfig.companyRadiusMeters;
+      notes.push(
+        geoPass
+          ? `GPS is within ${(distanceMeters).toFixed(0)}m of the company location.`
+          : `GPS is ${(distanceMeters).toFixed(0)}m away from the company location.`,
+      );
+    } else {
+      notes.push(position.error || 'GPS verification was not available.');
+    }
+  }
+
+  if (ipConfigured) {
+    if (ip.ip) {
+      ipPass = verificationConfig.allowedIps.some((rule) => ipMatchesRule(ip.ip as string, rule));
+      notes.push(
+        ipPass
+          ? `IP ${ip.ip} matches the company allowlist.`
+          : `IP ${ip.ip} does not match the company allowlist.`,
+      );
+    } else {
+      notes.push(ip.error || 'IP verification was not available.');
+    }
+  }
+
+  const configuredChecks = Number(geoConfigured) + Number(ipConfigured);
+  const passedChecks = Number(geoPass) + Number(ipPass);
+  const verificationStatus =
+    configuredChecks === 0
+      ? VERIFICATION_STATUS.UNVERIFIED
+      : passedChecks === configuredChecks
+        ? VERIFICATION_STATUS.VERIFIED
+        : passedChecks > 0
+          ? VERIFICATION_STATUS.PARTIAL
+          : VERIFICATION_STATUS.UNVERIFIED;
+
+  if (configuredChecks === 0) {
+    notes.push('No company GPS or IP verification rules are configured.');
+  }
+
+  return {
+    hasConfiguredRules: configuredChecks > 0,
+    preview: {
+      detected_latitude: position.latitude,
+      detected_longitude: position.longitude,
+      detected_accuracy_meters: position.accuracy,
+      company_latitude: verificationConfig.companyLatitude,
+      company_longitude: verificationConfig.companyLongitude,
+      company_radius_meters: verificationConfig.companyRadiusMeters,
+      distance_meters: distanceMeters,
+      detected_ip: ip.ip,
+      allowed_ips: verificationConfig.allowedIps,
+      geo_pass: geoConfigured ? geoPass : null,
+      ip_pass: ipConfigured ? ipPass : null,
+      verification_status: verificationStatus,
+      verification_summary: notes.join(' '),
+    },
+    logFields: {
+      check_latitude: position.latitude,
+      check_longitude: position.longitude,
+      check_accuracy_meters: position.accuracy,
+      check_ip: ip.ip,
+      verification_status: verificationStatus,
+      verification_summary: notes.join(' '),
+    },
+  };
+};
+
 const startOfDay = (date: Date) => new Date(date.getFullYear(), date.getMonth(), date.getDate());
 const startOfWeek = (date: Date) => {
   const value = startOfDay(date);
@@ -136,7 +329,7 @@ const userStatsFromLogs = (logs: LogRow[]) => {
 const getLogsForUser = async (userId: string, limit?: number) => {
   let query = supabase
     .from('logs')
-    .select('id, user_id, time_in, time_out, total_hours')
+    .select('id, user_id, time_in, time_out, total_hours, check_latitude, check_longitude, check_accuracy_meters, check_ip, verification_status, verification_summary')
     .eq('user_id', userId)
     .order('time_in', { ascending: false });
   if (limit) query = query.limit(limit);
@@ -272,16 +465,31 @@ export const api = {
     const { profile } = await requireProfile();
     const active = await api.getActiveSession();
     if (active?.session) return { error: 'You already have an active session' };
+    const verification = await collectVerificationSnapshot();
     const payload = {
       user_id: profile.id,
       time_in: new Date().toISOString(),
       time_out: null,
       total_hours: 0,
+      ...verification.logFields,
     };
-    const { data, error } = await supabase.from('logs').insert(payload).select('id, user_id, time_in, time_out, total_hours').single();
+    const { data, error } = await supabase.from('logs').insert(payload).select('id, user_id, time_in, time_out, total_hours, check_latitude, check_longitude, check_accuracy_meters, check_ip, verification_status, verification_summary').single();
     if (error) return { error: error.message };
     await syncNotificationsForProfile(profile);
-    return { success: true, log: data };
+    return {
+      success: true,
+      log: data,
+      warning:
+        !verification.hasConfiguredRules || data.verification_status === VERIFICATION_STATUS.VERIFIED
+          ? null
+          : data.verification_summary || 'This session could not be fully verified against company GPS/IP rules.',
+    };
+  },
+
+  verificationPreview: async () => {
+    await requireSession();
+    const verification = await collectVerificationSnapshot();
+    return verification.preview;
   },
 
   timeOut: async () => {
@@ -294,7 +502,7 @@ export const api = {
       .from('logs')
       .update({ time_out: timeOut, total_hours: totalHours })
       .eq('id', active.session.id)
-      .select('id, user_id, time_in, time_out, total_hours')
+      .select('id, user_id, time_in, time_out, total_hours, check_latitude, check_longitude, check_accuracy_meters, check_ip, verification_status, verification_summary')
       .single();
     if (error) return { error: error.message };
     await syncNotificationsForProfile(profile);
@@ -305,7 +513,7 @@ export const api = {
     const { profile } = await requireProfile();
     const { data, error } = await supabase
       .from('logs')
-      .select('id, user_id, time_in, time_out, total_hours')
+      .select('id, user_id, time_in, time_out, total_hours, check_latitude, check_longitude, check_accuracy_meters, check_ip, verification_status, verification_summary')
       .eq('user_id', profile.id)
       .is('time_out', null)
       .order('time_in', { ascending: false })
@@ -412,7 +620,7 @@ export const api = {
       time_out,
       total_hours: computeHours(time_in, time_out),
     };
-    const { data, error } = await supabase.from('logs').insert(payload).select('id, user_id, time_in, time_out, total_hours').single();
+    const { data, error } = await supabase.from('logs').insert(payload).select('id, user_id, time_in, time_out, total_hours, check_latitude, check_longitude, check_accuracy_meters, check_ip, verification_status, verification_summary').single();
     if (error) throw error;
     await syncNotificationsForProfile(profile);
     return { success: true, log: data };
@@ -440,7 +648,7 @@ export const api = {
       .from('logs')
       .update(payload)
       .eq('id', entryId)
-      .select('id, user_id, time_in, time_out, total_hours')
+      .select('id, user_id, time_in, time_out, total_hours, check_latitude, check_longitude, check_accuracy_meters, check_ip, verification_status, verification_summary')
       .single();
 
     if (error) return { error: error.message };
@@ -526,7 +734,7 @@ export const api = {
 
     const { data: logs, error: logsError } = await supabase
       .from('logs')
-      .select('id, user_id, time_in, time_out, total_hours');
+      .select('id, user_id, time_in, time_out, total_hours, check_latitude, check_longitude, check_accuracy_meters, check_ip, verification_status, verification_summary');
     if (logsError) throw logsError;
 
     const allLogs = (logs ?? []) as LogRow[];
@@ -567,7 +775,7 @@ export const api = {
 
     let query = supabase
       .from('logs')
-      .select('id, user_id, time_in, time_out, total_hours')
+      .select('id, user_id, time_in, time_out, total_hours, check_latitude, check_longitude, check_accuracy_meters, check_ip, verification_status, verification_summary')
       .order('time_in', { ascending: false });
     if (params.limit) query = query.limit(params.limit);
     const { data: logs, error } = await query;
