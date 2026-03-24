@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Bell, Check, Clock, Play, Square, LogOut, Shield, TrendingUp, BarChart3, Calendar, BookOpen, ChevronLeft, ChevronRight, Plus, Trash2, X, AlertTriangle, ListFilter, Layers, Users, Activity, Search, Download, RefreshCw, Eye, Loader2, Lock, Mail, User, ArrowRight } from 'lucide-react';
+import { Bell, Check, Clock, Play, Square, LogOut, Shield, TrendingUp, BarChart3, Calendar, BookOpen, ChevronLeft, ChevronRight, Plus, Trash2, X, AlertTriangle, ListFilter, Layers, Users, Activity, Search, Download, RefreshCw, Eye, Loader2, Lock, Mail, User, ArrowRight, Settings } from 'lucide-react';
 import { api } from '@/lib/api';
 
 /* ─── helpers ─── */
@@ -283,6 +283,146 @@ function RecentEntries({ logs }: { logs: LogT[] }) {
   );
 }
 
+function AccountSettingsModal({
+  isOpen,
+  onClose,
+  user,
+  onSave,
+}: {
+  isOpen: boolean;
+  onClose: () => void;
+  user: UserT;
+  onSave: (user: UserT) => void;
+}) {
+  const [name, setName] = useState(user.name);
+  const [email, setEmail] = useState(user.email);
+  const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [savingProfile, setSavingProfile] = useState(false);
+  const [savingPassword, setSavingPassword] = useState(false);
+  const [message, setMessage] = useState('');
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    if (!isOpen) return;
+    setName(user.name);
+    setEmail(user.email);
+    setPassword('');
+    setConfirmPassword('');
+    setMessage('');
+    setError('');
+  }, [isOpen, user]);
+
+  if (!isOpen) return null;
+
+  const saveProfile = async () => {
+    setSavingProfile(true);
+    setError('');
+    setMessage('');
+    try {
+      const result = await api.updateAccount({ name, email });
+      if (result?.error) {
+        setError(result.error);
+        return;
+      }
+      if (result?.user) {
+        onSave(result.user);
+      }
+      setMessage(result?.message || 'Profile updated.');
+    } catch (e: any) {
+      setError(e?.message || 'Failed to update profile');
+    } finally {
+      setSavingProfile(false);
+    }
+  };
+
+  const savePassword = async () => {
+    if (password.length < 6) {
+      setError('Password must be at least 6 characters.');
+      return;
+    }
+    if (password !== confirmPassword) {
+      setError('Passwords do not match.');
+      return;
+    }
+
+    setSavingPassword(true);
+    setError('');
+    setMessage('');
+    try {
+      const result = await api.updatePassword(password);
+      if (result?.error) {
+        setError(result.error);
+        return;
+      }
+      setPassword('');
+      setConfirmPassword('');
+      setMessage(result?.message || 'Password updated.');
+    } catch (e: any) {
+      setError(e?.message || 'Failed to update password');
+    } finally {
+      setSavingPassword(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+      <div className="w-full max-w-lg rounded-2xl border border-slate-700/50 bg-[#111827] shadow-2xl">
+        <div className="flex items-center justify-between border-b border-slate-700/40 px-6 py-4">
+          <div>
+            <h3 className="text-lg font-semibold text-white">Account Settings</h3>
+            <p className="text-sm text-slate-500">Update your profile and sign-in details.</p>
+          </div>
+          <button onClick={onClose} className="text-slate-400 hover:text-white">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+        <div className="space-y-6 px-6 py-5">
+          {(message || error) && (
+            <div className={`rounded-xl border px-4 py-3 text-sm ${error ? 'border-rose-500/30 bg-rose-500/10 text-rose-300' : 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'}`}>
+              {error || message}
+            </div>
+          )}
+
+          <div className="space-y-4 rounded-xl border border-slate-700/40 bg-slate-900/30 p-4">
+            <div>
+              <label className="mb-1.5 block text-sm text-slate-400">Name</label>
+              <input value={name} onChange={e => setName(e.target.value)} className="w-full rounded-xl border border-slate-700/50 bg-[#0d1117] px-4 py-3 text-white focus:outline-none focus:border-cyan-500/50" />
+            </div>
+            <div>
+              <label className="mb-1.5 block text-sm text-slate-400">Email</label>
+              <input type="email" value={email} onChange={e => setEmail(e.target.value)} className="w-full rounded-xl border border-slate-700/50 bg-[#0d1117] px-4 py-3 text-white focus:outline-none focus:border-cyan-500/50" />
+            </div>
+            <div className="flex justify-end">
+              <button onClick={saveProfile} disabled={savingProfile} className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 px-4 py-2.5 text-sm font-medium text-white disabled:opacity-50">
+                {savingProfile ? <Loader2 className="w-4 h-4 animate-spin" /> : <User className="w-4 h-4" />}
+                Save Profile
+              </button>
+            </div>
+          </div>
+
+          <div className="space-y-4 rounded-xl border border-slate-700/40 bg-slate-900/30 p-4">
+            <div>
+              <label className="mb-1.5 block text-sm text-slate-400">New Password</label>
+              <input type="password" value={password} onChange={e => setPassword(e.target.value)} className="w-full rounded-xl border border-slate-700/50 bg-[#0d1117] px-4 py-3 text-white focus:outline-none focus:border-cyan-500/50" />
+            </div>
+            <div>
+              <label className="mb-1.5 block text-sm text-slate-400">Confirm Password</label>
+              <input type="password" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} className="w-full rounded-xl border border-slate-700/50 bg-[#0d1117] px-4 py-3 text-white focus:outline-none focus:border-cyan-500/50" />
+            </div>
+            <div className="flex justify-end">
+              <button onClick={savePassword} disabled={savingPassword} className="inline-flex items-center gap-2 rounded-xl border border-slate-600/60 px-4 py-2.5 text-sm font-medium text-white disabled:opacity-50">
+                {savingPassword ? <Loader2 className="w-4 h-4 animate-spin" /> : <Lock className="w-4 h-4" />}
+                Update Password
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ═══════════════════════════════════════════════════════════════════
    SETTINGS MODAL
    ═══════════════════════════════════════════════════════════════════ */
@@ -464,6 +604,7 @@ const AppLayout: React.FC = () => {
   const [notifications, setNotifications] = useState<NotificationT[]>([]);
   const [unreadNotifications, setUnreadNotifications] = useState(0);
   const [showNotifications, setShowNotifications] = useState(false);
+  const [showAccountSettings, setShowAccountSettings] = useState(false);
   const notificationPanelRef = useRef<HTMLDivElement | null>(null);
 
   // Check token on mount
@@ -526,6 +667,9 @@ const AppLayout: React.FC = () => {
 
   const handleLogin = (u: UserT, s: SettingsT | null) => { setUser(u); if (s) setSettings(s); };
   const handleLogout = async () => { await api.logout().catch(() => {}); clearToken(); setUser(null); setNotifications([]); setUnreadNotifications(0); setShowNotifications(false); };
+  const handleAccountSaved = (nextUser: UserT) => {
+    setUser(nextUser);
+  };
   const handleNotificationToggle = async () => {
     if (!showNotifications) {
       await fetchNotifications();
@@ -571,6 +715,11 @@ const AppLayout: React.FC = () => {
         <div className="flex items-center gap-3">
           {user.role === 'admin' && <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm bg-cyan-500/20 text-cyan-400 border border-cyan-500/30"><Shield className="w-4 h-4" /><span className="hidden sm:inline">Admin Panel</span></div>}
           <span className="text-sm text-slate-400 hidden sm:inline">{user.name}</span>
+          {user.role !== 'admin' && (
+            <button onClick={() => setShowAccountSettings(true)} className="w-9 h-9 rounded-full border border-slate-700/50 flex items-center justify-center text-slate-400 hover:text-white hover:border-slate-600 transition-all">
+              <Settings className="w-4 h-4" />
+            </button>
+          )}
           {user.role !== 'admin' && (
             <div className="relative" ref={notificationPanelRef}>
               <button onClick={handleNotificationToggle} className="relative w-9 h-9 rounded-full border border-slate-700/50 flex items-center justify-center text-slate-400 hover:text-white hover:border-slate-600 transition-all">
@@ -644,6 +793,14 @@ const AppLayout: React.FC = () => {
           </div>
         )}
       </main>
+      {user.role !== 'admin' && (
+        <AccountSettingsModal
+          isOpen={showAccountSettings}
+          onClose={() => setShowAccountSettings(false)}
+          user={user}
+          onSave={handleAccountSaved}
+        />
+      )}
     </div>
   );
 };

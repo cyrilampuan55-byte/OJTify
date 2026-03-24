@@ -570,6 +570,70 @@ export const api = {
     return { settings: await getSettingsForUser(profile.id) };
   },
 
+  updateAccount: async (payload: { name: string; email: string }) => {
+    const { profile, session } = await requireProfile();
+    const nextName = payload.name.trim();
+    const nextEmail = payload.email.trim().toLowerCase();
+
+    if (!nextName) {
+      return { error: 'Name is required' };
+    }
+
+    if (!nextEmail) {
+      return { error: 'Email is required' };
+    }
+
+    const updates: Record<string, any> = {};
+    if (nextName !== profile.name) {
+      updates.name = nextName;
+    }
+    if (nextEmail !== profile.email) {
+      updates.email = nextEmail;
+    }
+
+    if (Object.keys(updates).length > 0) {
+      const { error: profileError } = await supabase.from('profiles').update(updates).eq('id', profile.id);
+      if (profileError) return { error: profileError.message };
+    }
+
+    const authPayload: { email?: string; data?: { name: string } } = {};
+    if (nextEmail !== session.user.email) {
+      authPayload.email = nextEmail;
+    }
+    if ((session.user.user_metadata?.name || '') !== nextName) {
+      authPayload.data = { name: nextName };
+    }
+
+    if (Object.keys(authPayload).length > 0) {
+      const { error: authError } = await supabase.auth.updateUser(authPayload);
+      if (authError) return { error: authError.message };
+    }
+
+    return {
+      success: true,
+      user: {
+        ...profile,
+        name: nextName,
+        email: nextEmail,
+      },
+      message:
+        authPayload.email && nextEmail !== session.user.email
+          ? 'Profile updated. Check your email if Supabase requires email-change confirmation.'
+          : 'Profile updated.',
+    };
+  },
+
+  updatePassword: async (password: string) => {
+    const nextPassword = password.trim();
+    if (nextPassword.length < 6) {
+      return { error: 'Password must be at least 6 characters.' };
+    }
+
+    const { error } = await supabase.auth.updateUser({ password: nextPassword });
+    if (error) return { error: error.message };
+    return { success: true, message: 'Password updated.' };
+  },
+
   getUserSettings: async (userId: string) => {
     const { profile } = await requireProfile();
     const targetUserId = profile.role === 'admin' ? userId : profile.id;
