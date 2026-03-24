@@ -33,6 +33,8 @@ alter table public.logs add column if not exists check_accuracy_meters double pr
 alter table public.logs add column if not exists check_ip text null;
 alter table public.logs add column if not exists verification_status text not null default 'unverified';
 alter table public.logs add column if not exists verification_summary text null;
+alter table public.logs add column if not exists entry_type text not null default 'regular';
+alter table public.logs add column if not exists description text null;
 
 create index if not exists logs_user_id_idx on public.logs(user_id);
 create index if not exists logs_time_in_idx on public.logs(time_in desc);
@@ -108,6 +110,7 @@ drop policy if exists "profiles update own or admin" on public.profiles;
 drop policy if exists "settings own or admin" on public.settings;
 drop policy if exists "logs own or admin select" on public.logs;
 drop policy if exists "logs own insert" on public.logs;
+drop policy if exists "logs own or admin insert" on public.logs;
 drop policy if exists "logs own or admin update" on public.logs;
 drop policy if exists "logs own or admin delete" on public.logs;
 drop policy if exists "notifications own or admin select" on public.notifications;
@@ -145,9 +148,11 @@ using (
   auth.uid() = user_id or public.is_admin()
 );
 
-create policy "logs own insert"
+create policy "logs own or admin insert"
 on public.logs for insert to authenticated
-with check (auth.uid() = user_id);
+with check (
+  auth.uid() = user_id or public.is_admin()
+);
 
 create policy "logs own or admin update"
 on public.logs for update to authenticated

@@ -15,6 +15,8 @@ interface LogT {
   time_in: string;
   time_out: string | null;
   total_hours: number;
+  entry_type?: 'regular' | 'overtime';
+  description?: string | null;
   check_ip?: string | null;
   verification_status?: 'verified' | 'partial' | 'unverified';
   verification_summary?: string | null;
@@ -42,6 +44,13 @@ const verificationLabel = (status?: LogT['verification_status']) => {
     default:
       return 'Unverified';
   }
+};
+
+const logPrimaryText = (log: LogT) => {
+  if (log.entry_type === 'overtime' && log.description?.trim()) {
+    return log.description.trim();
+  }
+  return `${new Date(log.time_in).toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'})}${log.time_out ? ` - ${new Date(log.time_out).toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'})}` : ''}`;
 };
 
 /* ═══════════════════════════════════════════════════════════════════
@@ -251,7 +260,7 @@ function CalendarView({ logs }: { logs: LogT[] }) {
       </div>
       <div className="grid grid-cols-7 gap-1 mb-2">{['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map(d => <div key={d} className="text-center text-xs font-medium text-slate-500 py-1">{d}</div>)}</div>
       <div className="grid grid-cols-7 gap-1">{days.map((day, i) => { if (!day) return <div key={`e${i}`} />; const ds = `${y}-${(mo+1).toString().padStart(2,'0')}-${day.toString().padStart(2,'0')}`; const isT = ds === todayStr; const hw = worked[ds]; const isS = ds === sel; return (<button key={ds} onClick={() => setSel(isS ? null : ds)} className={`relative aspect-square flex items-center justify-center rounded-lg text-sm transition-all ${isS ? 'bg-cyan-500/20 border border-cyan-500/50 text-cyan-400' : isT ? 'border border-cyan-500/40 text-cyan-400' : hw ? 'text-white hover:bg-slate-800/50' : 'text-slate-500 hover:bg-slate-800/30'}`}>{day}{hw && <div className="absolute bottom-1 left-1/2 -translate-x-1/2 w-1 h-1 rounded-full bg-cyan-400" />}</button>); })}</div>
-      {sel && <div className="mt-4 pt-4 border-t border-slate-700/40"><h4 className="text-sm font-medium text-slate-400 mb-2">{new Date(sel+'T00:00:00').toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'})}</h4>{worked[sel] ? worked[sel].entries.map(l => <div key={l.id} className="flex items-center justify-between text-xs bg-slate-800/50 rounded-lg px-3 py-2 mb-1"><span className="text-slate-300">{new Date(l.time_in).toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'})}{l.time_out && <> - {new Date(l.time_out).toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'})}</>}</span><span className="text-cyan-400 font-mono">{(l.total_hours||0).toFixed(2)} hrs</span></div>) : <p className="text-xs text-slate-500">No entries</p>}</div>}
+      {sel && <div className="mt-4 pt-4 border-t border-slate-700/40"><h4 className="text-sm font-medium text-slate-400 mb-2">{new Date(sel+'T00:00:00').toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'})}</h4>{worked[sel] ? worked[sel].entries.map(l => <div key={l.id} className="flex items-center justify-between text-xs bg-slate-800/50 rounded-lg px-3 py-2 mb-1"><span className="text-slate-300">{logPrimaryText(l)}</span><span className="text-cyan-400 font-mono">{(l.total_hours||0).toFixed(2)} hrs</span></div>) : <p className="text-xs text-slate-500">No entries</p>}</div>}
     </div>
   );
 }
@@ -268,7 +277,7 @@ function RecentEntries({ logs }: { logs: LogT[] }) {
           <div key={l.id} className="flex items-center gap-3 px-3 py-2.5 rounded-lg bg-slate-800/30">
             <div className="flex-1 min-w-0">
               <div className="text-xs text-slate-400">{new Date(l.time_in).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}</div>
-              <div className="text-sm text-slate-300">{new Date(l.time_in).toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'})}{l.time_out ? <span> - {new Date(l.time_out).toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'})}</span> : <span className="text-emerald-400 ml-2 text-xs">Active</span>}</div>
+              <div className="text-sm text-slate-300">{logPrimaryText(l)}{!l.time_out ? <span className="text-emerald-400 ml-2 text-xs">Active</span> : null}</div>
               <div className="mt-1 flex items-center gap-2">
                 <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium ${verificationBadgeClass(l.verification_status)}`}>{verificationLabel(l.verification_status)}</span>
                 {l.check_ip && <span className="text-[11px] text-slate-500">{l.check_ip}</span>}
@@ -472,10 +481,13 @@ function AdminDash() {
   const [addIn, setAddIn] = useState('');
   const [addOut, setAddOut] = useState('');
   const [addHours, setAddHours] = useState('2');
+  const [addDescription, setAddDescription] = useState('');
   const [isOvertimeEntry, setIsOvertimeEntry] = useState(false);
   const [savingNewLog, setSavingNewLog] = useState(false);
   const [userSettings, setUserSettings] = useState<SettingsT>({ excluded_days: ['Sun'], target_end_date: null, target_hours: 600 });
   const [savingSettings, setSavingSettings] = useState(false);
+  const [showSettingsPanel, setShowSettingsPanel] = useState(false);
+  const [showAddLogPanel, setShowAddLogPanel] = useState(false);
 
   const fetch = useCallback(async () => { try { const d = await api.adminUsers(); if (d?.users) setUsers(d.users); } catch {} finally { setLoading(false); } }, []);
   useEffect(() => { fetch(); const i = setInterval(fetch, 15000); return () => clearInterval(i); }, [fetch]);
@@ -504,7 +516,10 @@ function AdminDash() {
     setAddIn('08:00');
     setAddOut('17:00');
     setAddHours('2');
+    setAddDescription('');
     setIsOvertimeEntry(false);
+    setShowSettingsPanel(false);
+    setShowAddLogPanel(false);
     try {
       const [logsData, settingsData] = await Promise.all([
         api.logs({ userId: u.id, limit: 50 }),
@@ -554,14 +569,15 @@ function AdminDash() {
   };
   const addManualLog = async () => {
     if (!selUser) return;
-    if (!addDate || !addIn) {
-      alert('Please complete the date and time in fields.');
+    if (!addDate || (!isOvertimeEntry && !addIn)) {
+      alert(isOvertimeEntry ? 'Please complete the date field.' : 'Please complete the date and time in fields.');
       return;
     }
 
     setSavingNewLog(true);
     try {
-      const timeIn = new Date(`${addDate}T${addIn}:00`).toISOString();
+      const baseTimeIn = isOvertimeEntry ? `${addDate}T18:00:00` : `${addDate}T${addIn}:00`;
+      const timeIn = new Date(baseTimeIn).toISOString();
       let timeOut: string;
 
       if (isOvertimeEntry) {
@@ -570,7 +586,11 @@ function AdminDash() {
           alert('Please enter a valid overtime duration in hours.');
           return;
         }
-        timeOut = new Date(new Date(`${addDate}T${addIn}:00`).getTime() + overtimeHours * 60 * 60 * 1000).toISOString();
+        if (!addDescription.trim()) {
+          alert('Please enter an overtime description.');
+          return;
+        }
+        timeOut = new Date(new Date(baseTimeIn).getTime() + overtimeHours * 60 * 60 * 1000).toISOString();
       } else {
         if (!addOut) {
           alert('Please complete the time out field.');
@@ -579,7 +599,10 @@ function AdminDash() {
         timeOut = new Date(`${addDate}T${addOut}:00`).toISOString();
       }
 
-      const result = await api.addUserEntry(selUser.id, timeIn, timeOut);
+      const result = await api.addUserEntry(selUser.id, timeIn, timeOut, {
+        entry_type: isOvertimeEntry ? 'overtime' : 'regular',
+        description: isOvertimeEntry ? addDescription.trim() : null,
+      });
       if (result?.error) {
         alert(result.error);
         return;
@@ -645,7 +668,146 @@ function AdminDash() {
         ))}
         {filtered.length === 0 && <div className="col-span-full text-center py-10"><Users className="w-10 h-10 text-slate-600 mx-auto mb-3" /><p className="text-slate-500 text-sm">No students found</p></div>}
       </div></div>
-      {selUser && <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4"><div className="bg-[#111827] border border-slate-700/50 rounded-2xl w-full max-w-3xl max-h-[80vh] overflow-hidden flex flex-col"><div className="flex items-center justify-between p-6 border-b border-slate-700/40"><div><h3 className="text-lg font-semibold text-white">{selUser.name}'s Logs</h3><p className="text-sm text-slate-500">{selUser.email}</p></div><button onClick={() => { cancelEditLog(); setSelUser(null); }} className="text-slate-400 hover:text-white"><X className="w-5 h-5" /></button></div><div className="flex-1 overflow-y-auto p-6 space-y-6"><div className="bg-slate-800/30 rounded-xl p-4 border border-slate-700/30"><div className="flex items-center justify-between gap-3 mb-4"><h4 className="text-sm font-semibold text-slate-300 tracking-wider">OJT SETTINGS</h4><button onClick={saveStudentSettings} disabled={savingSettings} className="px-3 py-1.5 text-xs rounded-lg bg-cyan-500 text-white hover:bg-cyan-400 transition-all disabled:opacity-50">{savingSettings ? 'Saving...' : 'Save Settings'}</button></div><div className="grid grid-cols-1 md:grid-cols-2 gap-4"><div><label className="block text-xs text-slate-400 mb-1.5">Target OJT Hours</label><input type="number" min={1} value={userSettings.target_hours} onChange={e => setUserSettings(prev => ({ ...prev, target_hours: Number(e.target.value) || 0 }))} className="w-full px-3 py-2 bg-[#0d1117] border border-slate-700/50 rounded-lg text-white text-sm focus:outline-none focus:border-cyan-500/50" /></div><div><label className="block text-xs text-slate-400 mb-1.5">Target End Date</label><input type="date" value={userSettings.target_end_date || ''} onChange={e => setUserSettings(prev => ({ ...prev, target_end_date: e.target.value || null }))} className="w-full px-3 py-2 bg-[#0d1117] border border-slate-700/50 rounded-lg text-white text-sm focus:outline-none focus:border-cyan-500/50" /></div></div><div className="mt-4"><label className="block text-xs text-slate-400 mb-2">Exclude Days from Calculation</label><div className="grid grid-cols-4 sm:grid-cols-7 gap-2">{['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map(day => <button key={day} onClick={() => toggleExcludedDay(day)} className={`py-2 text-xs rounded-lg border transition-all ${userSettings.excluded_days.includes(day) ? 'bg-rose-500/20 border-rose-500/30 text-rose-400' : 'bg-slate-900/60 border-slate-700/40 text-slate-400 hover:text-white'}`}>{day}</button>)}</div></div></div><div className="bg-slate-800/30 rounded-xl p-4 border border-slate-700/30"><div className="flex items-center justify-between gap-3 mb-4"><div><h4 className="text-sm font-semibold text-slate-300 tracking-wider">ADD LOG / OVERTIME</h4><p className="text-xs text-slate-500 mt-1">Use regular entries for shift ranges, or switch to overtime and enter only the overtime hours.</p></div><button onClick={addManualLog} disabled={savingNewLog} className="px-3 py-1.5 text-xs rounded-lg bg-emerald-500 text-white hover:bg-emerald-400 transition-all disabled:opacity-50">{savingNewLog ? 'Saving...' : isOvertimeEntry ? 'Add Overtime' : 'Add Entry'}</button></div><div className="mb-4 flex gap-2"><button onClick={() => setIsOvertimeEntry(false)} className={`px-3 py-2 text-xs rounded-lg border transition-all ${!isOvertimeEntry ? 'bg-cyan-500/20 border-cyan-500/30 text-cyan-400' : 'border-slate-700/50 text-slate-400 hover:text-white'}`}>Regular Entry</button><button onClick={() => setIsOvertimeEntry(true)} className={`px-3 py-2 text-xs rounded-lg border transition-all ${isOvertimeEntry ? 'bg-amber-500/20 border-amber-500/30 text-amber-400' : 'border-slate-700/50 text-slate-400 hover:text-white'}`}>Overtime</button></div><div className={`grid grid-cols-1 ${isOvertimeEntry ? 'sm:grid-cols-3' : 'sm:grid-cols-3'} gap-3`}><input type="date" value={addDate} onChange={e => setAddDate(e.target.value)} className="w-full px-3 py-2 bg-[#0d1117] border border-slate-700/50 rounded-lg text-white text-sm focus:outline-none focus:border-cyan-500/50" /><input type="time" value={addIn} onChange={e => setAddIn(e.target.value)} className="w-full px-3 py-2 bg-[#0d1117] border border-slate-700/50 rounded-lg text-white text-sm focus:outline-none focus:border-cyan-500/50" />{isOvertimeEntry ? <input type="number" min="0.25" step="0.25" value={addHours} onChange={e => setAddHours(e.target.value)} placeholder="Hours" className="w-full px-3 py-2 bg-[#0d1117] border border-slate-700/50 rounded-lg text-white text-sm focus:outline-none focus:border-cyan-500/50" /> : <input type="time" value={addOut} onChange={e => setAddOut(e.target.value)} className="w-full px-3 py-2 bg-[#0d1117] border border-slate-700/50 rounded-lg text-white text-sm focus:outline-none focus:border-cyan-500/50" />}</div></div><div className="space-y-3">{userLogs.map((l: any) => <div key={l.id} className="px-4 py-3 bg-slate-800/30 rounded-lg">{editingLogId === l.id ? <div className="space-y-3"><div className="grid grid-cols-1 sm:grid-cols-3 gap-3"><input type="date" value={editDate} onChange={e => setEditDate(e.target.value)} className="w-full px-3 py-2 bg-[#0d1117] border border-slate-700/50 rounded-lg text-white text-sm focus:outline-none focus:border-cyan-500/50" /><input type="time" value={editIn} onChange={e => setEditIn(e.target.value)} className="w-full px-3 py-2 bg-[#0d1117] border border-slate-700/50 rounded-lg text-white text-sm focus:outline-none focus:border-cyan-500/50" /><input type="time" value={editOut} onChange={e => setEditOut(e.target.value)} className="w-full px-3 py-2 bg-[#0d1117] border border-slate-700/50 rounded-lg text-white text-sm focus:outline-none focus:border-cyan-500/50" /></div><div className="flex items-center justify-between gap-3"><span className="text-xs text-slate-500">Leave time out blank to keep the session active.</span><div className="flex gap-2"><button onClick={cancelEditLog} className="px-3 py-1.5 text-xs rounded-lg border border-slate-700/50 text-slate-400 hover:text-white transition-all">Cancel</button><button onClick={saveEditLog} disabled={savingLog} className="px-3 py-1.5 text-xs rounded-lg bg-cyan-500 text-white hover:bg-cyan-400 transition-all disabled:opacity-50">{savingLog ? 'Saving...' : 'Save'}</button></div></div></div> : <div className="flex items-center justify-between gap-4"><div className="min-w-0"><div className="text-sm text-white">{new Date(l.time_in).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}</div><div className="text-xs text-slate-400">{new Date(l.time_in).toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'})}{l.time_out?<> - {new Date(l.time_out).toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'})}</>:<span className="text-emerald-400 ml-2">Active</span>}</div><div className="mt-2 flex flex-wrap items-center gap-2"><span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium ${verificationBadgeClass(l.verification_status)}`}>{verificationLabel(l.verification_status)}</span>{l.check_ip && <span className="text-[11px] text-slate-500">{l.check_ip}</span>}</div>{l.verification_summary && <p className="mt-1 text-[11px] text-slate-500">{l.verification_summary}</p>}</div><div className="flex items-center gap-3"><span className="text-sm font-mono text-cyan-400">{(l.total_hours||0).toFixed(2)} hrs</span><button onClick={() => startEditLog(l)} className="px-3 py-1.5 text-xs rounded-lg border border-slate-700/50 text-slate-400 hover:text-cyan-400 transition-all">Edit</button></div></div>}</div>)}{userLogs.length===0&&<p className="text-center text-slate-500 py-10">No logs found</p>}</div></div><div className="p-4 border-t border-slate-700/40 text-center"><span className="text-sm text-slate-400">Total: <span className="text-cyan-400 font-mono font-bold">{selectedUserTotal.toFixed(2)} hrs</span> / {userSettings.target_hours} hrs</span></div></div></div>}
+      {selUser && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-[#111827] border border-slate-700/50 rounded-2xl w-full max-w-3xl max-h-[80vh] overflow-hidden flex flex-col">
+            <div className="flex items-center justify-between p-6 border-b border-slate-700/40">
+              <div>
+                <h3 className="text-lg font-semibold text-white">{selUser.name}'s Logs</h3>
+                <p className="text-sm text-slate-500">{selUser.email}</p>
+              </div>
+              <button onClick={() => { cancelEditLog(); setSelUser(null); }} className="text-slate-400 hover:text-white">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-6 space-y-6">
+              <div className="bg-slate-800/30 rounded-xl border border-slate-700/30">
+                <button onClick={() => setShowSettingsPanel(prev => !prev)} className="flex w-full items-center justify-between gap-3 px-4 py-4 text-left">
+                  <div>
+                    <h4 className="text-sm font-semibold text-slate-300 tracking-wider">OJT SETTINGS</h4>
+                    <p className="text-xs text-slate-500 mt-1">Target hours, end date, and excluded days.</p>
+                  </div>
+                  <ChevronRight className={`w-4 h-4 text-slate-400 transition-transform ${showSettingsPanel ? 'rotate-90' : ''}`} />
+                </button>
+                {showSettingsPanel && (
+                  <div className="border-t border-slate-700/30 px-4 pb-4">
+                    <div className="flex items-center justify-end mb-4 pt-4">
+                      <button onClick={saveStudentSettings} disabled={savingSettings} className="px-3 py-1.5 text-xs rounded-lg bg-cyan-500 text-white hover:bg-cyan-400 transition-all disabled:opacity-50">
+                        {savingSettings ? 'Saving...' : 'Save Settings'}
+                      </button>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-xs text-slate-400 mb-1.5">Target OJT Hours</label>
+                        <input type="number" min={1} value={userSettings.target_hours} onChange={e => setUserSettings(prev => ({ ...prev, target_hours: Number(e.target.value) || 0 }))} className="w-full px-3 py-2 bg-[#0d1117] border border-slate-700/50 rounded-lg text-white text-sm focus:outline-none focus:border-cyan-500/50" />
+                      </div>
+                      <div>
+                        <label className="block text-xs text-slate-400 mb-1.5">Target End Date</label>
+                        <input type="date" value={userSettings.target_end_date || ''} onChange={e => setUserSettings(prev => ({ ...prev, target_end_date: e.target.value || null }))} className="w-full px-3 py-2 bg-[#0d1117] border border-slate-700/50 rounded-lg text-white text-sm focus:outline-none focus:border-cyan-500/50" />
+                      </div>
+                    </div>
+                    <div className="mt-4">
+                      <label className="block text-xs text-slate-400 mb-2">Exclude Days from Calculation</label>
+                      <div className="grid grid-cols-4 sm:grid-cols-7 gap-2">
+                        {['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map(day => (
+                          <button key={day} onClick={() => toggleExcludedDay(day)} className={`py-2 text-xs rounded-lg border transition-all ${userSettings.excluded_days.includes(day) ? 'bg-rose-500/20 border-rose-500/30 text-rose-400' : 'bg-slate-900/60 border-slate-700/40 text-slate-400 hover:text-white'}`}>
+                            {day}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div className="bg-slate-800/30 rounded-xl border border-slate-700/30">
+                <button onClick={() => setShowAddLogPanel(prev => !prev)} className="flex w-full items-center justify-between gap-3 px-4 py-4 text-left">
+                  <div>
+                    <h4 className="text-sm font-semibold text-slate-300 tracking-wider">ADD LOG / OVERTIME</h4>
+                    <p className="text-xs text-slate-500 mt-1">Create regular entries or overtime blocks.</p>
+                  </div>
+                  <ChevronRight className={`w-4 h-4 text-slate-400 transition-transform ${showAddLogPanel ? 'rotate-90' : ''}`} />
+                </button>
+                {showAddLogPanel && (
+                  <div className="border-t border-slate-700/30 px-4 pb-4">
+                    <div className="flex items-center justify-between gap-3 mb-4 pt-4">
+                      <p className="text-xs text-slate-500">Use regular entries for shift ranges, or switch to overtime and enter only the overtime hours.</p>
+                      <button onClick={addManualLog} disabled={savingNewLog} className="px-3 py-1.5 text-xs rounded-lg bg-emerald-500 text-white hover:bg-emerald-400 transition-all disabled:opacity-50">
+                        {savingNewLog ? 'Saving...' : isOvertimeEntry ? 'Add Overtime' : 'Add Entry'}
+                      </button>
+                    </div>
+                    <div className="mb-4 flex gap-2">
+                      <button onClick={() => setIsOvertimeEntry(false)} className={`px-3 py-2 text-xs rounded-lg border transition-all ${!isOvertimeEntry ? 'bg-cyan-500/20 border-cyan-500/30 text-cyan-400' : 'border-slate-700/50 text-slate-400 hover:text-white'}`}>Regular Entry</button>
+                      <button onClick={() => setIsOvertimeEntry(true)} className={`px-3 py-2 text-xs rounded-lg border transition-all ${isOvertimeEntry ? 'bg-amber-500/20 border-amber-500/30 text-amber-400' : 'border-slate-700/50 text-slate-400 hover:text-white'}`}>Overtime</button>
+                    </div>
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                      <input type="date" value={addDate} onChange={e => setAddDate(e.target.value)} className="w-full px-3 py-2 bg-[#0d1117] border border-slate-700/50 rounded-lg text-white text-sm focus:outline-none focus:border-cyan-500/50" />
+                      {isOvertimeEntry ? (
+                        <>
+                          <input type="number" min="0.25" step="0.25" value={addHours} onChange={e => setAddHours(e.target.value)} placeholder="Hours" className="w-full px-3 py-2 bg-[#0d1117] border border-slate-700/50 rounded-lg text-white text-sm focus:outline-none focus:border-cyan-500/50" />
+                          <input type="text" value={addDescription} onChange={e => setAddDescription(e.target.value)} placeholder="Description" className="w-full px-3 py-2 bg-[#0d1117] border border-slate-700/50 rounded-lg text-white text-sm focus:outline-none focus:border-cyan-500/50" />
+                        </>
+                      ) : (
+                        <>
+                          <input type="time" value={addIn} onChange={e => setAddIn(e.target.value)} className="w-full px-3 py-2 bg-[#0d1117] border border-slate-700/50 rounded-lg text-white text-sm focus:outline-none focus:border-cyan-500/50" />
+                          <input type="time" value={addOut} onChange={e => setAddOut(e.target.value)} className="w-full px-3 py-2 bg-[#0d1117] border border-slate-700/50 rounded-lg text-white text-sm focus:outline-none focus:border-cyan-500/50" />
+                        </>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div className="space-y-3">
+                {userLogs.map((l: any) => (
+                  <div key={l.id} className="px-4 py-3 bg-slate-800/30 rounded-lg">
+                    {editingLogId === l.id ? (
+                      <div className="space-y-3">
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                          <input type="date" value={editDate} onChange={e => setEditDate(e.target.value)} className="w-full px-3 py-2 bg-[#0d1117] border border-slate-700/50 rounded-lg text-white text-sm focus:outline-none focus:border-cyan-500/50" />
+                          <input type="time" value={editIn} onChange={e => setEditIn(e.target.value)} className="w-full px-3 py-2 bg-[#0d1117] border border-slate-700/50 rounded-lg text-white text-sm focus:outline-none focus:border-cyan-500/50" />
+                          <input type="time" value={editOut} onChange={e => setEditOut(e.target.value)} className="w-full px-3 py-2 bg-[#0d1117] border border-slate-700/50 rounded-lg text-white text-sm focus:outline-none focus:border-cyan-500/50" />
+                        </div>
+                        <div className="flex items-center justify-between gap-3">
+                          <span className="text-xs text-slate-500">Leave time out blank to keep the session active.</span>
+                          <div className="flex gap-2">
+                            <button onClick={cancelEditLog} className="px-3 py-1.5 text-xs rounded-lg border border-slate-700/50 text-slate-400 hover:text-white transition-all">Cancel</button>
+                            <button onClick={saveEditLog} disabled={savingLog} className="px-3 py-1.5 text-xs rounded-lg bg-cyan-500 text-white hover:bg-cyan-400 transition-all disabled:opacity-50">{savingLog ? 'Saving...' : 'Save'}</button>
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="flex items-center justify-between gap-4">
+                        <div className="min-w-0">
+                          <div className="text-sm text-white">{new Date(l.time_in).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}</div>
+                          <div className="text-xs text-slate-400">
+                            {l.entry_type === 'overtime' && l.description ? l.description : `${new Date(l.time_in).toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'})}${l.time_out ? ` - ${new Date(l.time_out).toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'})}` : ''}`}
+                            {!l.time_out ? <span className="text-emerald-400 ml-2">Active</span> : null}
+                          </div>
+                          <div className="mt-2 flex flex-wrap items-center gap-2">
+                            <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium ${verificationBadgeClass(l.verification_status)}`}>{verificationLabel(l.verification_status)}</span>
+                            {l.entry_type === 'overtime' && <span className="inline-flex items-center rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[11px] font-medium text-amber-300">Overtime</span>}
+                            {l.check_ip && <span className="text-[11px] text-slate-500">{l.check_ip}</span>}
+                          </div>
+                          {l.verification_summary && <p className="mt-1 text-[11px] text-slate-500">{l.verification_summary}</p>}
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <span className="text-sm font-mono text-cyan-400">{(l.total_hours||0).toFixed(2)} hrs</span>
+                          <button onClick={() => startEditLog(l)} className="px-3 py-1.5 text-xs rounded-lg border border-slate-700/50 text-slate-400 hover:text-cyan-400 transition-all">Edit</button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ))}
+                {userLogs.length===0&&<p className="text-center text-slate-500 py-10">No logs found</p>}
+              </div>
+            </div>
+            <div className="p-4 border-t border-slate-700/40 text-center">
+              <span className="text-sm text-slate-400">Total: <span className="text-cyan-400 font-mono font-bold">{selectedUserTotal.toFixed(2)} hrs</span> / {userSettings.target_hours} hrs</span>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -24,6 +24,8 @@ interface LogRow {
   time_in: string;
   time_out: string | null;
   total_hours: number;
+  entry_type?: 'regular' | 'overtime';
+  description?: string | null;
   check_latitude?: number | null;
   check_longitude?: number | null;
   check_accuracy_meters?: number | null;
@@ -112,12 +114,16 @@ const getSettingsForUser = async (userId: string) => {
   };
 };
 
-const computeHours = (timeIn: string, timeOut: string | null) => {
+const computeHours = (timeIn: string, timeOut: string | null, entryType: 'regular' | 'overtime' = 'regular') => {
   if (!timeOut) return 0;
   const start = new Date(timeIn);
   const end = new Date(timeOut);
   const diffMs = end.getTime() - start.getTime();
   if (diffMs <= 0) return 0;
+
+  if (entryType === 'overtime') {
+    return Number((diffMs / 3_600_000).toFixed(2));
+  }
 
   let breakOverlapMs = 0;
   const cursor = new Date(start.getFullYear(), start.getMonth(), start.getDate());
@@ -332,7 +338,7 @@ const userStatsFromLogs = (logs: LogRow[]) => {
 
   completed.forEach((log) => {
     const stamp = new Date(log.time_in).getTime();
-    const hours = computeHours(log.time_in, log.time_out);
+    const hours = computeHours(log.time_in, log.time_out, log.entry_type ?? 'regular');
     total += hours;
     if (stamp >= dayStart) today += hours;
     if (stamp >= weekStart) week += hours;
@@ -351,7 +357,7 @@ const userStatsFromLogs = (logs: LogRow[]) => {
 const getLogsForUser = async (userId: string, limit?: number) => {
   let query = supabase
     .from('logs')
-    .select('id, user_id, time_in, time_out, total_hours, check_latitude, check_longitude, check_accuracy_meters, check_ip, verification_status, verification_summary')
+    .select('id, user_id, time_in, time_out, total_hours, entry_type, description, check_latitude, check_longitude, check_accuracy_meters, check_ip, verification_status, verification_summary')
     .eq('user_id', userId)
     .order('time_in', { ascending: false });
   if (limit) query = query.limit(limit);
@@ -359,7 +365,7 @@ const getLogsForUser = async (userId: string, limit?: number) => {
   if (error) throw error;
   return (data ?? []).map((log) => ({
     ...log,
-    total_hours: computeHours(log.time_in, log.time_out),
+    total_hours: computeHours(log.time_in, log.time_out, log.entry_type ?? 'regular'),
   })) as LogRow[];
 };
 
@@ -428,7 +434,7 @@ const syncNotificationsForProfile = async (profile: ProfileRow) => {
 
   const weekStart = startOfWeek(new Date()).getTime();
   const weekLogs = logs.filter((log) => log.time_out && new Date(log.time_in).getTime() >= weekStart);
-  const weekHours = weekLogs.reduce((sum, log) => sum + computeHours(log.time_in, log.time_out), 0);
+  const weekHours = weekLogs.reduce((sum, log) => sum + computeHours(log.time_in, log.time_out, log.entry_type ?? 'regular'), 0);
   await ensureNotification(
     profile.id,
     'weekly_summary',
@@ -495,7 +501,7 @@ export const api = {
       total_hours: 0,
       ...verification.logFields,
     };
-    const { data, error } = await supabase.from('logs').insert(payload).select('id, user_id, time_in, time_out, total_hours, check_latitude, check_longitude, check_accuracy_meters, check_ip, verification_status, verification_summary').single();
+    const { data, error } = await supabase.from('logs').insert(payload).select('id, user_id, time_in, time_out, total_hours, entry_type, description, check_latitude, check_longitude, check_accuracy_meters, check_ip, verification_status, verification_summary').single();
     if (error) return { error: error.message };
     await syncNotificationsForProfile(profile);
     return {
@@ -519,12 +525,12 @@ export const api = {
     const active = await api.getActiveSession();
     if (!active?.session) return { error: 'No active session found' };
     const timeOut = new Date().toISOString();
-    const totalHours = computeHours(active.session.time_in, timeOut);
+    const totalHours = computeHours(active.session.time_in, timeOut, active.session.entry_type ?? 'regular');
     const { data, error } = await supabase
       .from('logs')
       .update({ time_out: timeOut, total_hours: totalHours })
       .eq('id', active.session.id)
-      .select('id, user_id, time_in, time_out, total_hours, check_latitude, check_longitude, check_accuracy_meters, check_ip, verification_status, verification_summary')
+      .select('id, user_id, time_in, time_out, total_hours, entry_type, description, check_latitude, check_longitude, check_accuracy_meters, check_ip, verification_status, verification_summary')
       .single();
     if (error) return { error: error.message };
     await syncNotificationsForProfile(profile);
@@ -535,7 +541,7 @@ export const api = {
     const { profile } = await requireProfile();
     const { data, error } = await supabase
       .from('logs')
-      .select('id, user_id, time_in, time_out, total_hours, check_latitude, check_longitude, check_accuracy_meters, check_ip, verification_status, verification_summary')
+      .select('id, user_id, time_in, time_out, total_hours, entry_type, description, check_latitude, check_longitude, check_accuracy_meters, check_ip, verification_status, verification_summary')
       .eq('user_id', profile.id)
       .is('time_out', null)
       .order('time_in', { ascending: false })
@@ -695,7 +701,7 @@ export const api = {
     return { success: true, settings: data };
   },
 
-  addUserEntry: async (userId: string, time_in: string, time_out: string) => {
+  addUserEntry: async (userId: string, time_in: string, time_out: string, options: { entry_type?: 'regular' | 'overtime'; description?: string | null } = {}) => {
     const { profile } = await requireProfile();
     const targetUserId = profile.role === 'admin' ? userId : profile.id;
     if (new Date(time_out).getTime() <= new Date(time_in).getTime()) {
@@ -719,12 +725,14 @@ export const api = {
       user_id: targetUserId,
       time_in,
       time_out,
-      total_hours: computeHours(time_in, time_out),
+      total_hours: computeHours(time_in, time_out, options.entry_type ?? 'regular'),
+      entry_type: options.entry_type ?? 'regular',
+      description: options.description ?? null,
     };
     const { data, error } = await supabase
       .from('logs')
       .insert(payload)
-      .select('id, user_id, time_in, time_out, total_hours, check_latitude, check_longitude, check_accuracy_meters, check_ip, verification_status, verification_summary')
+      .select('id, user_id, time_in, time_out, total_hours, entry_type, description, check_latitude, check_longitude, check_accuracy_meters, check_ip, verification_status, verification_summary')
       .single();
     if (error) return { error: error.message };
     await syncNotificationsForProfile(targetProfile.data as ProfileRow);
@@ -740,9 +748,11 @@ export const api = {
       user_id: profile.id,
       time_in,
       time_out,
-      total_hours: computeHours(time_in, time_out),
+      total_hours: computeHours(time_in, time_out, 'regular'),
+      entry_type: 'regular',
+      description: null,
     };
-    const { data, error } = await supabase.from('logs').insert(payload).select('id, user_id, time_in, time_out, total_hours, check_latitude, check_longitude, check_accuracy_meters, check_ip, verification_status, verification_summary').single();
+    const { data, error } = await supabase.from('logs').insert(payload).select('id, user_id, time_in, time_out, total_hours, entry_type, description, check_latitude, check_longitude, check_accuracy_meters, check_ip, verification_status, verification_summary').single();
     if (error) throw error;
     await syncNotificationsForProfile(profile);
     return { success: true, log: data };
@@ -760,17 +770,27 @@ export const api = {
       return { error: 'Time out must be after time in' };
     }
 
+    const { data: existingLog, error: existingError } = await supabase
+      .from('logs')
+      .select('entry_type')
+      .eq('id', entryId)
+      .single();
+
+    if (existingError || !existingLog) {
+      return { error: existingError?.message || 'Log not found' };
+    }
+
     const payload = {
       time_in,
       time_out,
-      total_hours: computeHours(time_in, time_out),
+      total_hours: computeHours(time_in, time_out, (existingLog.entry_type as 'regular' | 'overtime' | null) ?? 'regular'),
     };
 
     const { data, error } = await supabase
       .from('logs')
       .update(payload)
       .eq('id', entryId)
-      .select('id, user_id, time_in, time_out, total_hours, check_latitude, check_longitude, check_accuracy_meters, check_ip, verification_status, verification_summary')
+      .select('id, user_id, time_in, time_out, total_hours, entry_type, description, check_latitude, check_longitude, check_accuracy_meters, check_ip, verification_status, verification_summary')
       .single();
 
     if (error) return { error: error.message };
@@ -856,7 +876,7 @@ export const api = {
 
     const { data: logs, error: logsError } = await supabase
       .from('logs')
-      .select('id, user_id, time_in, time_out, total_hours, check_latitude, check_longitude, check_accuracy_meters, check_ip, verification_status, verification_summary');
+      .select('id, user_id, time_in, time_out, total_hours, entry_type, description, check_latitude, check_longitude, check_accuracy_meters, check_ip, verification_status, verification_summary');
     if (logsError) throw logsError;
 
     const allLogs = (logs ?? []) as LogRow[];
@@ -897,7 +917,7 @@ export const api = {
 
     let query = supabase
       .from('logs')
-      .select('id, user_id, time_in, time_out, total_hours, check_latitude, check_longitude, check_accuracy_meters, check_ip, verification_status, verification_summary')
+      .select('id, user_id, time_in, time_out, total_hours, entry_type, description, check_latitude, check_longitude, check_accuracy_meters, check_ip, verification_status, verification_summary')
       .order('time_in', { ascending: false });
     if (params.limit) query = query.limit(params.limit);
     const { data: logs, error } = await query;
@@ -907,7 +927,7 @@ export const api = {
     return {
       logs: (logs ?? []).map((log) => ({
         ...log,
-        total_hours: computeHours(log.time_in, log.time_out),
+        total_hours: computeHours(log.time_in, log.time_out, log.entry_type ?? 'regular'),
         profiles: profileMap.get(log.user_id) ?? null,
       })),
     };
