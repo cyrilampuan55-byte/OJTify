@@ -457,6 +457,10 @@ function AdminDash() {
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<'all'|'active'|'offline'>('all');
   const [now, setNow] = useState(Date.now());
+  const [insUser, setInsUser] = useState<any>(null);
+  const [insStats, setInsStats] = useState<StatsT | null>(null);
+  const [insSettings, setInsSettings] = useState<SettingsT>({ excluded_days: ['Sun'], target_end_date: null, target_hours: 600 });
+  const [insLoading, setInsLoading] = useState(false);
   const [selUser, setSelUser] = useState<any>(null);
   const [userLogs, setUserLogs] = useState<any[]>([]);
   const [editingLogId, setEditingLogId] = useState<string | null>(null);
@@ -494,8 +498,27 @@ function AdminDash() {
   const selectedUserTotal = userLogs.reduce((sum: number, log: any) => sum + (log.total_hours || 0), 0);
   const fmtE = (st: string) => { const sec = Math.floor((now - new Date(st).getTime()) / 1000); return `${Math.floor(sec/3600).toString().padStart(2,'0')}:${Math.floor((sec%3600)/60).toString().padStart(2,'0')}:${(sec%60).toString().padStart(2,'0')}`; };
 
-  const handleExport = async () => { try { const d = await api.adminExport({}); if (d?.logs) { const csv = ['Name,Email,Date,Time In,Time Out,Hours', ...d.logs.map((l: any) => `"${l.profiles?.name||''}","${l.profiles?.email||''}","${new Date(l.time_in).toLocaleDateString()}","${new Date(l.time_in).toLocaleTimeString()}","${l.time_out?new Date(l.time_out).toLocaleTimeString():'Active'}","${(l.total_hours||0).toFixed(2)}"`)].join('\n'); const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([csv],{type:'text/csv'})); a.download = `ojt-report-${new Date().toISOString().split('T')[0]}.csv`; a.click(); } } catch {} };
+  const handleExport = async () => { try { const d = await api.adminExport({}); if (d?.logs) { const csv = ['Name,Email,Date,Time In,Time Out,Hours,Entry Type', ...d.logs.map((l: any) => `"${l.profiles?.name||''}","${l.profiles?.email||''}","${new Date(l.time_in).toLocaleDateString()}","${new Date(l.time_in).toLocaleTimeString()}","${l.time_out?new Date(l.time_out).toLocaleTimeString():'Active'}","${(l.total_hours||0).toFixed(2)}","${l.entry_type||'regular'}"`)].join('\n'); const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([csv],{type:'text/csv'})); a.download = `ojt-report-${new Date().toISOString().split('T')[0]}.csv`; a.click(); } } catch {} };
+  const viewInsights = async (u: any) => {
+    setSelUser(null);
+    cancelEditLog();
+    setInsUser(u);
+    setInsLoading(true);
+    try {
+      const [statsData, settingsData] = await Promise.all([
+        api.stats(u.id),
+        api.getUserSettings(u.id),
+      ]);
+      setInsStats(statsData || { today: 0, week: 0, month: 0, total: 0, daysWorked: 0 });
+      setInsSettings(settingsData?.settings || { excluded_days: ['Sun'], target_end_date: null, target_hours: u.target_hours || 600 });
+    } catch {
+      setInsStats({ today: 0, week: 0, month: 0, total: 0, daysWorked: 0 });
+    } finally {
+      setInsLoading(false);
+    }
+  };
   const viewLogs = async (u: any) => {
+    setInsUser(null);
     setSelUser(u);
     setEditingLogId(null);
     const now = new Date();
@@ -646,15 +669,41 @@ function AdminDash() {
       </div>
       <div className="bg-[#111827]/80 border border-slate-700/40 rounded-2xl p-5"><h3 className="text-sm font-semibold text-slate-400 tracking-wider mb-4">LIVE MONITORING</h3><div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
         {filtered.map(u => (
-          <div key={u.id} className={`p-4 rounded-xl border transition-all ${u.isActive?'bg-emerald-500/5 border-emerald-500/20':'bg-slate-800/30 border-slate-700/30'}`}>
+          <div key={u.id} onClick={() => viewInsights(u)} className={`p-4 rounded-xl border transition-all cursor-pointer ${u.isActive?'bg-emerald-500/5 border-emerald-500/20 hover:border-emerald-500/30':'bg-slate-800/30 border-slate-700/30 hover:border-slate-600/40'}`}>
             <div className="flex items-center justify-between mb-3"><div className="flex items-center gap-3"><div className={`w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold ${u.isActive?'bg-gradient-to-br from-emerald-500 to-cyan-500 text-white':'bg-slate-700 text-slate-400'}`}>{u.name.charAt(0)}</div><div><p className="text-sm font-medium text-white">{u.name}</p><p className="text-xs text-slate-500">{u.email}</p></div></div><div className="flex items-center gap-1"><div className={`w-2 h-2 rounded-full ${u.isActive?'bg-emerald-400 animate-pulse':'bg-slate-600'}`} /><span className={`text-xs ${u.isActive?'text-emerald-400':'text-slate-500'}`}>{u.isActive?'Working':'Offline'}</span></div></div>
             {u.isActive && u.activeSessionStart && <div className="text-lg font-mono text-emerald-400 mb-2">{fmtE(u.activeSessionStart)}</div>}
             <div className="flex items-center justify-between"><div><div className="text-xs text-slate-500">Progress</div><div className="flex items-center gap-2"><div className="w-20 h-1.5 bg-slate-800 rounded-full overflow-hidden"><div className={`h-full rounded-full ${u.progress>=100?'bg-emerald-400':'bg-cyan-400'}`} style={{width:`${Math.min(u.progress,100)}%`}} /></div><span className="text-xs text-slate-400">{u.progress}%</span></div></div><div className="text-right"><div className="text-xs text-slate-500">Hours</div><div className="text-sm font-mono text-white">{u.totalHours.toFixed(1)}/{u.target_hours}</div></div></div>
-            <div className="flex gap-2 mt-3 pt-3 border-t border-slate-700/30"><button onClick={() => viewLogs(u)} className="flex-1 flex items-center justify-center gap-1.5 py-1.5 text-xs rounded-lg border border-slate-700/50 text-slate-400 hover:text-cyan-400 transition-all"><Eye className="w-3.5 h-3.5" />View Logs</button><button onClick={() => delUser(u.id)} className="px-3 py-1.5 text-xs rounded-lg border border-red-500/20 text-red-400/60 hover:text-red-400 transition-all"><Trash2 className="w-3.5 h-3.5" /></button></div>
+            <div className="flex gap-2 mt-3 pt-3 border-t border-slate-700/30"><button onClick={(e) => { e.stopPropagation(); viewLogs(u); }} className="flex-1 flex items-center justify-center gap-1.5 py-1.5 text-xs rounded-lg border border-slate-700/50 text-slate-400 hover:text-cyan-400 transition-all"><Eye className="w-3.5 h-3.5" />View Logs</button><button onClick={(e) => { e.stopPropagation(); delUser(u.id); }} className="px-3 py-1.5 text-xs rounded-lg border border-red-500/20 text-red-400/60 hover:text-red-400 transition-all"><Trash2 className="w-3.5 h-3.5" /></button></div>
           </div>
         ))}
-        {filtered.length === 0 && <div className="col-span-full text-center py-10"><Users className="w-10 h-10 text-slate-600 mx-auto mb-3" /><p className="text-slate-500 text-sm">No students found</p></div>}
+      {filtered.length === 0 && <div className="col-span-full text-center py-10"><Users className="w-10 h-10 text-slate-600 mx-auto mb-3" /><p className="text-slate-500 text-sm">No students found</p></div>}
       </div></div>
+      {insUser && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-[#111827] border border-slate-700/50 rounded-2xl w-full max-w-3xl max-h-[80vh] overflow-hidden flex flex-col">
+            <div className="flex items-center justify-between p-6 border-b border-slate-700/40">
+              <div>
+                <h3 className="text-lg font-semibold text-white">{insUser.name}'s Insights</h3>
+                <p className="text-sm text-slate-500">{insUser.email}</p>
+              </div>
+              <button onClick={() => setInsUser(null)} className="text-slate-400 hover:text-white">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-6 space-y-6">
+              {insLoading || !insStats ? (
+                <div className="flex justify-center py-10"><Loader2 className="w-8 h-8 text-cyan-400 animate-spin" /></div>
+              ) : (
+                <>
+                  <StatsCards stats={insStats} />
+                  <ProgressSection total={insStats.total} target={insSettings.target_hours} />
+                  <InsightsPanel stats={insStats} target={insSettings.target_hours} excluded={insSettings.excluded_days} />
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
       {selUser && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="bg-[#111827] border border-slate-700/50 rounded-2xl w-full max-w-3xl max-h-[80vh] overflow-hidden flex flex-col">

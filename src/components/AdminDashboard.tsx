@@ -100,10 +100,10 @@ const AdminDashboard: React.FC = () => {
       const data = await api.exportLogs({});
       if (data?.logs) {
         const csv = [
-          'Name,Email,Date,Time In,Time Out,Hours',
+          'Name,Email,Date,Time In,Time Out,Hours,Entry Type',
           ...data.logs.map((l: any) => {
             const profile = l.profiles || {};
-            return `"${profile.name || ''}","${profile.email || ''}","${new Date(l.time_in).toLocaleDateString()}","${new Date(l.time_in).toLocaleTimeString()}","${l.time_out ? new Date(l.time_out).toLocaleTimeString() : 'Active'}","${(l.total_hours || 0).toFixed(2)}"`;
+            return `"${profile.name || ''}","${profile.email || ''}","${new Date(l.time_in).toLocaleDateString()}","${new Date(l.time_in).toLocaleTimeString()}","${l.time_out ? new Date(l.time_out).toLocaleTimeString() : 'Active'}","${(l.total_hours || 0).toFixed(2)}","${l.entry_type || 'regular'}"`;
           })
         ].join('\n');
 
