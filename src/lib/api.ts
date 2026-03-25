@@ -959,10 +959,21 @@ export const api = {
   adminDelete: async (userId: string) => api.deleteUser(userId),
 
   exportLogs: async (params: Record<string, any> = {}) => {
-    const { data: profiles, error: profilesError } = await supabase
-      .from('profiles')
-      .select('id, name, email');
-    if (profilesError) throw profilesError;
+    const { profile } = await requireProfile();
+    const isAdmin = profile.role === 'admin';
+    const targetUserId = isAdmin && params.userId ? String(params.userId) : null;
+
+    let profiles: { id: string; name: string; email: string }[] = [];
+    if (isAdmin && !targetUserId) {
+      const { data, error } = await supabase.from('profiles').select('id, name, email');
+      if (error) throw error;
+      profiles = (data ?? []) as any;
+    } else {
+      const ids = [targetUserId ?? profile.id];
+      const { data, error } = await supabase.from('profiles').select('id, name, email').in('id', ids);
+      if (error) throw error;
+      profiles = (data ?? []) as any;
+    }
 
     const logs: LogRow[] = [];
     let from = 0;
@@ -972,11 +983,18 @@ export const api = {
       if (params.limit && remaining === 0) break;
 
       const batchSize = params.limit ? Math.min(remaining, LOGS_BATCH_SIZE) : LOGS_BATCH_SIZE;
-      const { data, error } = await supabase
+      let query = supabase
         .from('logs')
-        .select('id, user_id, time_in, time_out, total_hours, entry_type, description, check_latitude, check_longitude, check_accuracy_meters, check_ip, verification_status, verification_summary')
-        .order('time_in', { ascending: false })
-        .range(from, from + batchSize - 1);
+        .select(
+          'id, user_id, time_in, time_out, total_hours, entry_type, description, check_latitude, check_longitude, check_accuracy_meters, check_ip, verification_status, verification_summary',
+        )
+        .order('time_in', { ascending: false });
+
+      // Non-admins can only export their own logs. Admins can optionally export one user.
+      if (!isAdmin) query = query.eq('user_id', profile.id);
+      else if (targetUserId) query = query.eq('user_id', targetUserId);
+
+      const { data, error } = await query.range(from, from + batchSize - 1);
 
       if (error) throw error;
 

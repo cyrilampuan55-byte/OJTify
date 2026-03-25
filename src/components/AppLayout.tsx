@@ -484,6 +484,7 @@ function AdminDash() {
   const [savingSettings, setSavingSettings] = useState(false);
   const [showSettingsPanel, setShowSettingsPanel] = useState(false);
   const [showAddLogPanel, setShowAddLogPanel] = useState(false);
+  const [exportingUserId, setExportingUserId] = useState<string | null>(null);
 
   const fetch = useCallback(async () => { try { const d = await api.adminUsers(); if (d?.users) setUsers(d.users); } catch {} finally { setLoading(false); } }, []);
   useEffect(() => { fetch(); const i = setInterval(fetch, 15000); return () => clearInterval(i); }, [fetch]);
@@ -504,6 +505,35 @@ function AdminDash() {
   const fmtE = (st: string) => { const sec = Math.floor((now - new Date(st).getTime()) / 1000); return `${Math.floor(sec/3600).toString().padStart(2,'0')}:${Math.floor((sec%3600)/60).toString().padStart(2,'0')}:${(sec%60).toString().padStart(2,'0')}`; };
 
   const handleExport = async () => { try { const d = await api.adminExport({}); if (d?.logs) { const csv = ['Name,Email,Date,Time In,Time Out,Hours,Entry Type', ...d.logs.map((l: any) => `"${l.profiles?.name||''}","${l.profiles?.email||''}","${new Date(l.time_in).toLocaleDateString()}","${new Date(l.time_in).toLocaleTimeString()}","${l.time_out?new Date(l.time_out).toLocaleTimeString():'Active'}","${(l.total_hours||0).toFixed(2)}","${l.entry_type||'regular'}"`)].join('\n'); const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([csv],{type:'text/csv'})); a.download = `ojt-report-${new Date().toISOString().split('T')[0]}.csv`; a.click(); } } catch {} };
+  const handleExportUser = async (u: any) => {
+    setExportingUserId(u.id);
+    try {
+      const d = await api.adminExport({ userId: u.id });
+      if (d?.logs) {
+        const esc = (v: any) => `"${String(v ?? '').replaceAll('"', '""')}"`;
+        const csv = [
+          'Name,Email,Date,Time In,Time Out,Hours,Entry Type,Description,Verification',
+          ...d.logs.map((l: any) => [
+            esc(l.profiles?.name || u.name || ''),
+            esc(l.profiles?.email || u.email || ''),
+            esc(new Date(l.time_in).toLocaleDateString()),
+            esc(new Date(l.time_in).toLocaleTimeString()),
+            esc(l.time_out ? new Date(l.time_out).toLocaleTimeString() : 'Active'),
+            esc((l.total_hours || 0).toFixed(2)),
+            esc(l.entry_type || 'regular'),
+            esc(l.description || ''),
+            esc(l.verification_status || ''),
+          ].join(',')),
+        ].join('\n');
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
+        const safeName = String(u.name || 'student').trim().replace(/[^\w\-]+/g, '_').slice(0, 40);
+        a.download = `${safeName}-logs-${new Date().toISOString().split('T')[0]}.csv`;
+        a.click();
+      }
+    } catch {}
+    finally { setExportingUserId(null); }
+  };
   const viewInsights = async (u: any) => {
     setSelUser(null);
     cancelEditLog();
@@ -717,9 +747,19 @@ function AdminDash() {
                 <h3 className="text-lg font-semibold text-white">{selUser.name}'s Logs</h3>
                 <p className="text-sm text-slate-500">{selUser.email}</p>
               </div>
-              <button onClick={() => { cancelEditLog(); setSelUser(null); }} className="text-slate-400 hover:text-white">
-                <X className="w-5 h-5" />
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => handleExportUser(selUser)}
+                  disabled={exportingUserId === selUser.id}
+                  className="px-3 py-2 text-xs rounded-lg border border-slate-700/50 text-slate-400 hover:text-cyan-400 hover:border-cyan-500/30 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                >
+                  {exportingUserId === selUser.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+                  Export CSV
+                </button>
+                <button onClick={() => { cancelEditLog(); setSelUser(null); }} className="text-slate-400 hover:text-white">
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
             </div>
             <div className="flex-1 overflow-y-auto p-6 space-y-6">
               <div className="bg-slate-800/30 rounded-xl border border-slate-700/30">

@@ -23,6 +23,7 @@ const AdminDashboard: React.FC = () => {
   const [userLogs, setUserLogs] = useState<any[]>([]);
   const [logsLoading, setLogsLoading] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [exportingUserId, setExportingUserId] = useState<string | null>(null);
   const [now, setNow] = useState(Date.now());
 
   const fetchUsers = useCallback(async () => {
@@ -99,12 +100,23 @@ const AdminDashboard: React.FC = () => {
     try {
       const data = await api.exportLogs({});
       if (data?.logs) {
+        const escape = (value: any) => `"${String(value ?? '').replaceAll('"', '""')}"`;
         const csv = [
-          'Name,Email,Date,Time In,Time Out,Hours,Entry Type',
+          'Name,Email,Date,Time In,Time Out,Hours,Entry Type,Description,Verification',
           ...data.logs.map((l: any) => {
             const profile = l.profiles || {};
-            return `"${profile.name || ''}","${profile.email || ''}","${new Date(l.time_in).toLocaleDateString()}","${new Date(l.time_in).toLocaleTimeString()}","${l.time_out ? new Date(l.time_out).toLocaleTimeString() : 'Active'}","${(l.total_hours || 0).toFixed(2)}","${l.entry_type || 'regular'}"`;
-          })
+            return [
+              escape(profile.name),
+              escape(profile.email),
+              escape(new Date(l.time_in).toLocaleDateString()),
+              escape(new Date(l.time_in).toLocaleTimeString()),
+              escape(l.time_out ? new Date(l.time_out).toLocaleTimeString() : 'Active'),
+              escape((l.total_hours || 0).toFixed(2)),
+              escape(l.entry_type || 'regular'),
+              escape(l.description || ''),
+              escape(l.verification_status || ''),
+            ].join(',');
+          }),
         ].join('\n');
 
         const blob = new Blob([csv], { type: 'text/csv' });
@@ -119,6 +131,49 @@ const AdminDashboard: React.FC = () => {
       console.error('Export failed:', err);
     } finally {
       setExporting(false);
+    }
+  };
+
+  const handleExportUser = async (user: AdminUser) => {
+    setExportingUserId(user.id);
+    try {
+      const data = await api.exportLogs({ userId: user.id });
+      if (data?.logs) {
+        const escape = (value: any) => `"${String(value ?? '').replaceAll('"', '""')}"`;
+        const csv = [
+          'Name,Email,Date,Time In,Time Out,Hours,Entry Type,Description,Verification',
+          ...data.logs.map((l: any) => {
+            const profile = l.profiles || {};
+            return [
+              escape(profile.name || user.name),
+              escape(profile.email || user.email),
+              escape(new Date(l.time_in).toLocaleDateString()),
+              escape(new Date(l.time_in).toLocaleTimeString()),
+              escape(l.time_out ? new Date(l.time_out).toLocaleTimeString() : 'Active'),
+              escape((l.total_hours || 0).toFixed(2)),
+              escape(l.entry_type || 'regular'),
+              escape(l.description || ''),
+              escape(l.verification_status || ''),
+            ].join(',');
+          }),
+        ].join('\n');
+
+        const blob = new Blob([csv], { type: 'text/csv' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        const safeName = String(user.name || 'student')
+          .trim()
+          .replace(/[^\w\-]+/g, '_')
+          .slice(0, 40);
+        a.download = `${safeName}-logs-${new Date().toISOString().split('T')[0]}.csv`;
+        a.click();
+        URL.revokeObjectURL(url);
+      }
+    } catch (err) {
+      console.error('User export failed:', err);
+    } finally {
+      setExportingUserId(null);
     }
   };
 
@@ -291,6 +346,14 @@ const AdminDashboard: React.FC = () => {
                   View Logs
                 </button>
                 <button
+                  onClick={() => handleExportUser(user)}
+                  disabled={exportingUserId === user.id}
+                  className="flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs rounded-lg border border-slate-700/50 text-slate-400 hover:text-cyan-400 hover:border-cyan-500/30 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                  title="Export this student's logs as CSV"
+                >
+                  {exportingUserId === user.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}
+                </button>
+                <button
                   onClick={() => handleDeleteUser(user.id)}
                   className="flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs rounded-lg border border-red-500/20 text-red-400/60 hover:text-red-400 hover:border-red-500/40 transition-all"
                 >
@@ -318,9 +381,19 @@ const AdminDashboard: React.FC = () => {
                 <h3 className="text-lg font-semibold text-white">{selectedUser.name}'s Logs</h3>
                 <p className="text-sm text-slate-500">{selectedUser.email}</p>
               </div>
-              <button onClick={() => setSelectedUser(null)} className="text-slate-400 hover:text-white">
-                <X className="w-5 h-5" />
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => handleExportUser(selectedUser)}
+                  disabled={exportingUserId === selectedUser.id}
+                  className="px-3 py-2 text-xs rounded-lg border border-slate-700/50 text-slate-400 hover:text-cyan-400 hover:border-cyan-500/30 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                >
+                  {exportingUserId === selectedUser.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+                  Export CSV
+                </button>
+                <button onClick={() => setSelectedUser(null)} className="text-slate-400 hover:text-white">
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
             </div>
 
             <div className="flex-1 overflow-y-auto p-6">
