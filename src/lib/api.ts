@@ -163,11 +163,19 @@ const getCurrentPosition = async () => {
         });
       },
       (error) => {
+        const message =
+          (error as any)?.code === 1
+            ? 'Location permission was denied. Enable Location permission for OJTify (Allow while using) and turn on Precise location, then try again.'
+            : (error as any)?.code === 2
+              ? 'Location is unavailable. Turn on Location services and try again.'
+              : (error as any)?.code === 3
+                ? 'Location request timed out. Move to an open area or improve GPS signal, then try again.'
+                : null;
         resolve({
           latitude: null,
           longitude: null,
           accuracy: null,
-          error: error.message || 'Unable to read GPS position.',
+          error: message || error.message || 'Unable to read GPS position.',
         });
       },
       {

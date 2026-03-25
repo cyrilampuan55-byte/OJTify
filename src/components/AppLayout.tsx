@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Clock, Play, Square, LogOut, Shield, TrendingUp, BarChart3, Calendar, BookOpen, ChevronLeft, ChevronRight, Plus, Trash2, X, AlertTriangle, ListFilter, Layers, Users, Activity, Search, Download, RefreshCw, Eye, Loader2, Lock, Mail, User, ArrowRight, Settings } from 'lucide-react';
+import { Clock, Play, Square, LogOut, Shield, TrendingUp, BarChart3, Calendar, BookOpen, ChevronLeft, ChevronRight, Plus, Trash2, X, AlertTriangle, ListFilter, Layers, Users, Activity, Search, Download, RefreshCw, Eye, EyeOff, Loader2, Lock, Mail, User, ArrowRight, Settings } from 'lucide-react';
 import { api } from '@/lib/api';
 
 /* ─── helpers ─── */
@@ -46,6 +46,7 @@ function LoginPage({ onLogin }: { onLogin: (u: UserT, s: SettingsT | null) => vo
   const [isReg, setIsReg] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [name, setName] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -53,6 +54,10 @@ function LoginPage({ onLogin }: { onLogin: (u: UserT, s: SettingsT | null) => vo
   const submit = async (e: React.FormEvent) => {
     e.preventDefault(); setError(''); setLoading(true);
     try {
+      if (isReg && !name.trim()) {
+        setError('Name is required.');
+        return;
+      }
       const data = isReg ? await api.register(email.trim(), password, name.trim()) : await api.login(email.trim(), password);
       if (data?.token) { setToken(data.token); onLogin(data.user, data.settings); }
       else setError(data?.error || 'Failed');
@@ -79,9 +84,9 @@ function LoginPage({ onLogin }: { onLogin: (u: UserT, s: SettingsT | null) => vo
           <h2 className="text-xl font-semibold text-white mb-6">{isReg ? 'Create Account' : 'Welcome Back'}</h2>
           {error && <div className="mb-4 p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-red-400 text-sm">{error}</div>}
           <form onSubmit={submit} className="space-y-4">
-            {isReg && <div><label className="block text-sm text-slate-400 mb-1.5">Full Name</label><div className="relative"><User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" /><input type="text" value={name} onChange={e => setName(e.target.value)} placeholder="Enter your name" className="w-full pl-10 pr-4 py-3 bg-[#0d1117] border border-slate-700/50 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500/50" /></div></div>}
+            {isReg && <div><label className="block text-sm text-slate-400 mb-1.5">Full Name</label><div className="relative"><User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" /><input type="text" value={name} onChange={e => setName(e.target.value)} placeholder="Enter your name" required className="w-full pl-10 pr-4 py-3 bg-[#0d1117] border border-slate-700/50 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500/50" /></div></div>}
             <div><label className="block text-sm text-slate-400 mb-1.5">Email</label><div className="relative"><Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" /><input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="you@example.com" required className="w-full pl-10 pr-4 py-3 bg-[#0d1117] border border-slate-700/50 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500/50" /></div></div>
-            <div><label className="block text-sm text-slate-400 mb-1.5">Password</label><div className="relative"><Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" /><input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="Enter password" required minLength={4} className="w-full pl-10 pr-4 py-3 bg-[#0d1117] border border-slate-700/50 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500/50" /></div></div>
+            <div><label className="block text-sm text-slate-400 mb-1.5">Password</label><div className="relative"><Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" /><input type={showPassword ? "text" : "password"} value={password} onChange={e => setPassword(e.target.value)} placeholder="Enter password" required minLength={4} className="w-full pl-10 pr-12 py-3 bg-[#0d1117] border border-slate-700/50 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500/50" /><button type="button" onClick={() => setShowPassword(p => !p)} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300" aria-label={showPassword ? "Hide password" : "Show password"}>{showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}</button></div></div>
             <button type="submit" disabled={loading} className="w-full py-3 bg-gradient-to-r from-cyan-500 to-blue-600 text-white font-medium rounded-xl hover:from-cyan-400 hover:to-blue-500 transition-all flex items-center justify-center gap-2 disabled:opacity-50 shadow-lg shadow-cyan-500/20">
               {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : <>{isReg ? 'Create Account' : 'Sign In'}<ArrowRight className="w-4 h-4" /></>}
             </button>
