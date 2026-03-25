@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Bell, Check, Clock, Play, Square, LogOut, Shield, TrendingUp, BarChart3, Calendar, BookOpen, ChevronLeft, ChevronRight, Plus, Trash2, X, AlertTriangle, ListFilter, Layers, Users, Activity, Search, Download, RefreshCw, Eye, Loader2, Lock, Mail, User, ArrowRight, Settings } from 'lucide-react';
+import { Clock, Play, Square, LogOut, Shield, TrendingUp, BarChart3, Calendar, BookOpen, ChevronLeft, ChevronRight, Plus, Trash2, X, AlertTriangle, ListFilter, Layers, Users, Activity, Search, Download, RefreshCw, Eye, Loader2, Lock, Mail, User, ArrowRight, Settings } from 'lucide-react';
 import { api } from '@/lib/api';
 
 /* ─── helpers ─── */
@@ -859,44 +859,19 @@ const AppLayout: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState<StatsT>({ today: 0, week: 0, month: 0, total: 0, daysWorked: 0 });
   const [logs, setLogs] = useState<LogT[]>([]);
-  const [notifications, setNotifications] = useState<NotificationT[]>([]);
-  const [unreadNotifications, setUnreadNotifications] = useState(0);
-  const [showNotifications, setShowNotifications] = useState(false);
   const [showAccountSettings, setShowAccountSettings] = useState(false);
-  const notificationPanelRef = useRef<HTMLDivElement | null>(null);
 
   // Check token on mount
   useEffect(() => {
     api.verify().then(d => { if (d?.user) { setUser(d.user); if (d.settings) setSettings(d.settings); } else clearToken(); }).catch(() => clearToken()).finally(() => setLoading(false));
   }, []);
 
-  const fetchNotifications = useCallback(async () => {
-    if (!user || user.role === 'admin') {
-      setNotifications([]);
-      setUnreadNotifications(0);
-      return;
-    }
-    try {
-      const data = await api.getNotifications({ limit: 8 });
-      setNotifications(data?.notifications || []);
-      setUnreadNotifications(data?.unreadCount || 0);
-    } catch {}
-  }, [user]);
-
   const fetchData = useCallback(async () => {
     if (!user) return;
     try {
-      const requests: Promise<any>[] = [api.stats(), api.logs({ limit: 100 })];
-      if (user.role !== 'admin') {
-        requests.push(api.getNotifications({ limit: 8 }));
-      }
-      const [s, l, n] = await Promise.all(requests);
+      const [s, l] = await Promise.all([api.stats(), api.logs({ limit: 100 })]);
       if (s) setStats(s);
       if (l?.logs) setLogs(l.logs);
-      if (n) {
-        setNotifications(n.notifications || []);
-        setUnreadNotifications(n.unreadCount || 0);
-      }
     } catch {}
   }, [user]);
 
@@ -912,46 +887,10 @@ const AppLayout: React.FC = () => {
     });
   }, [user, fetchData]);
 
-  useEffect(() => {
-    if (!showNotifications) return;
-    const onPointerDown = (event: MouseEvent) => {
-      if (!notificationPanelRef.current?.contains(event.target as Node)) {
-        setShowNotifications(false);
-      }
-    };
-    document.addEventListener('mousedown', onPointerDown);
-    return () => document.removeEventListener('mousedown', onPointerDown);
-  }, [showNotifications]);
-
   const handleLogin = (u: UserT, s: SettingsT | null) => { setUser(u); if (s) setSettings(s); };
-  const handleLogout = async () => { await api.logout().catch(() => {}); clearToken(); setUser(null); setNotifications([]); setUnreadNotifications(0); setShowNotifications(false); };
+  const handleLogout = async () => { await api.logout().catch(() => {}); clearToken(); setUser(null); };
   const handleAccountSaved = (nextUser: UserT) => {
     setUser(nextUser);
-  };
-  const handleNotificationToggle = async () => {
-    if (!showNotifications) {
-      await fetchNotifications();
-    }
-    setShowNotifications(prev => !prev);
-  };
-  const handleMarkNotificationRead = async (id: string, alreadyRead: boolean) => {
-    if (!alreadyRead) {
-      await api.markNotificationRead(id);
-      await fetchNotifications();
-    }
-  };
-  const handleMarkAllNotificationsRead = async () => {
-    await api.markAllNotificationsRead();
-    await fetchNotifications();
-  };
-  const formatNotificationTime = (value: string) => {
-    const stamp = new Date(value);
-    return stamp.toLocaleString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      hour: 'numeric',
-      minute: '2-digit',
-    });
   };
 
   if (loading) return (
@@ -977,59 +916,6 @@ const AppLayout: React.FC = () => {
             <button onClick={() => setShowAccountSettings(true)} className="w-9 h-9 rounded-full border border-slate-700/50 flex items-center justify-center text-slate-400 hover:text-white hover:border-slate-600 transition-all">
               <Settings className="w-4 h-4" />
             </button>
-          )}
-          {user.role !== 'admin' && (
-            <div className="relative" ref={notificationPanelRef}>
-              <button onClick={handleNotificationToggle} className="relative w-9 h-9 rounded-full border border-slate-700/50 flex items-center justify-center text-slate-400 hover:text-white hover:border-slate-600 transition-all">
-                <Bell className="w-4 h-4" />
-                {unreadNotifications > 0 && (
-                  <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-rose-500 text-white text-[10px] font-bold flex items-center justify-center">
-                    {unreadNotifications > 9 ? '9+' : unreadNotifications}
-                  </span>
-                )}
-              </button>
-              {showNotifications && (
-                <div className="fixed left-4 right-4 top-[4.5rem] z-[60] max-h-[calc(100vh-6rem)] rounded-2xl border border-slate-700/60 bg-[#0d1117]/95 backdrop-blur-xl shadow-2xl overflow-hidden sm:absolute sm:left-auto sm:right-0 sm:top-auto sm:mt-3 sm:w-[22rem] sm:max-h-96 sm:max-w-[calc(100vw-2rem)]">
-                  <div className="flex items-center justify-between px-4 py-3 border-b border-slate-700/50">
-                    <div>
-                      <p className="text-sm font-semibold text-white">Notifications</p>
-                      <p className="text-xs text-slate-500">{unreadNotifications} unread</p>
-                    </div>
-                    <button onClick={handleMarkAllNotificationsRead} className="text-xs text-cyan-400 hover:text-cyan-300 transition-colors">
-                      Mark all read
-                    </button>
-                  </div>
-                  <div className="max-h-[calc(100vh-11rem)] overflow-y-auto sm:max-h-96">
-                    {notifications.length === 0 ? (
-                      <div className="px-4 py-8 text-center">
-                        <Bell className="w-8 h-8 text-slate-600 mx-auto mb-3" />
-                        <p className="text-sm text-slate-400">No notifications yet.</p>
-                      </div>
-                    ) : (
-                      notifications.map(notification => (
-                        <button
-                          key={notification.id}
-                          onClick={() => handleMarkNotificationRead(notification.id, Boolean(notification.read_at))}
-                          className={`w-full text-left px-4 py-3 border-b border-slate-800/80 hover:bg-slate-800/60 transition-colors ${notification.read_at ? 'bg-transparent' : 'bg-cyan-500/5'}`}
-                        >
-                          <div className="flex items-start gap-3">
-                            <div className={`mt-1 w-2.5 h-2.5 rounded-full flex-shrink-0 ${notification.read_at ? 'bg-slate-600' : 'bg-cyan-400'}`} />
-                            <div className="min-w-0 flex-1">
-                              <div className="flex items-start justify-between gap-2">
-                                <p className={`text-sm font-medium ${notification.read_at ? 'text-slate-300' : 'text-white'}`}>{notification.title}</p>
-                                {notification.read_at && <Check className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0 mt-0.5" />}
-                              </div>
-                              <p className="text-xs text-slate-400 mt-1 leading-relaxed">{notification.message}</p>
-                              <p className="text-[11px] text-slate-500 mt-2">{formatNotificationTime(notification.created_at)}</p>
-                            </div>
-                          </div>
-                        </button>
-                      ))
-                    )}
-                  </div>
-                </div>
-              )}
-            </div>
           )}
           {user.role === 'admin' && (
             <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-cyan-500 flex items-center justify-center text-white text-sm font-bold">{user.name.charAt(0).toUpperCase()}</div>
