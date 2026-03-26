@@ -68,10 +68,6 @@ const verificationConfig = {
   companyLatitude: toNumberOrNull(import.meta.env.VITE_COMPANY_LATITUDE),
   companyLongitude: toNumberOrNull(import.meta.env.VITE_COMPANY_LONGITUDE),
   companyRadiusMeters: toNumberOrNull(import.meta.env.VITE_COMPANY_RADIUS_METERS) ?? 150,
-  allowedIps: String(import.meta.env.VITE_ALLOWED_IPS || '')
-    .split(',')
-    .map((value) => value.trim())
-    .filter(Boolean),
 };
 
 const authRedirectUrl =
@@ -202,39 +198,6 @@ const getCurrentPosition = async () => {
   });
 };
 
-const getPublicIp = async () => {
-  try {
-    const response = await fetch('https://api.ipify.org?format=json', { cache: 'no-store' });
-    if (!response.ok) throw new Error('Unable to resolve public IP.');
-    const payload = await response.json();
-    return { ip: typeof payload.ip === 'string' ? payload.ip : null, error: null };
-  } catch (error: any) {
-    return { ip: null, error: error?.message || 'Unable to resolve public IP.' };
-  }
-};
-
-const toIPv4Int = (value: string) => {
-  const parts = value.split('.');
-  if (parts.length !== 4) return null;
-  const numbers = parts.map((part) => Number(part));
-  if (numbers.some((part) => !Number.isInteger(part) || part < 0 || part > 255)) return null;
-  return numbers.reduce((result, part) => (result << 8) + part, 0) >>> 0;
-};
-
-const ipMatchesRule = (ip: string, rule: string) => {
-  if (rule === ip) return true;
-  if (!rule.includes('/')) return false;
-  const [network, prefixValue] = rule.split('/');
-  const prefix = Number(prefixValue);
-  const ipInt = toIPv4Int(ip);
-  const networkInt = toIPv4Int(network);
-  if (ipInt === null || networkInt === null || !Number.isInteger(prefix) || prefix < 0 || prefix > 32) {
-    return false;
-  }
-  const mask = prefix === 0 ? 0 : (0xffffffff << (32 - prefix)) >>> 0;
-  return (ipInt & mask) === (networkInt & mask);
-};
-
 const distanceInMeters = (latitudeA: number, longitudeA: number, latitudeB: number, longitudeB: number) => {
   const earthRadius = 6371000;
   const toRadians = (value: number) => (value * Math.PI) / 180;
@@ -247,16 +210,14 @@ const distanceInMeters = (latitudeA: number, longitudeA: number, latitudeB: numb
 };
 
 const collectVerificationSnapshot = async () => {
-  const [position, ip] = await Promise.all([getCurrentPosition(), getPublicIp()]);
+  const position = await getCurrentPosition();
 
   const geoConfigured =
     verificationConfig.companyLatitude !== null &&
     verificationConfig.companyLongitude !== null &&
     verificationConfig.companyRadiusMeters !== null;
-  const ipConfigured = verificationConfig.allowedIps.length > 0;
 
   let geoPass = false;
-  let ipPass = false;
   let distanceMeters: number | null = null;
   const notes: string[] = [];
 
@@ -279,26 +240,13 @@ const collectVerificationSnapshot = async () => {
     }
   }
 
-  if (ipConfigured) {
-    if (ip.ip) {
-      ipPass = verificationConfig.allowedIps.some((rule) => ipMatchesRule(ip.ip as string, rule));
-      notes.push(
-        ipPass
-          ? `IP ${ip.ip} matches the company allowlist.`
-          : `IP ${ip.ip} does not match the company allowlist.`,
-      );
-    } else {
-      notes.push(ip.error || 'IP verification was not available.');
-    }
-  }
-
-  const configuredChecks = Number(geoConfigured) + Number(ipConfigured);
-  const passedChecks = Number(geoPass) + Number(ipPass);
+  const configuredChecks = Number(geoConfigured);
+  const passedChecks = Number(geoPass);
   const isStrictMatch = configuredChecks > 0 && passedChecks === configuredChecks;
   const verificationStatus = isStrictMatch ? VERIFICATION_STATUS.VERIFIED : VERIFICATION_STATUS.UNVERIFIED;
 
   if (configuredChecks === 0) {
-    notes.push('No company GPS or IP verification rules are configured.');
+    notes.push('No company GPS verification rules are configured.');
   }
 
   return {
@@ -312,10 +260,11 @@ const collectVerificationSnapshot = async () => {
       company_longitude: verificationConfig.companyLongitude,
       company_radius_meters: verificationConfig.companyRadiusMeters,
       distance_meters: distanceMeters,
-      detected_ip: ip.ip,
-      allowed_ips: verificationConfig.allowedIps,
       geo_pass: geoConfigured ? geoPass : null,
-      ip_pass: ipConfigured ? ipPass : null,
+      // Back-compat for older UI/debug tooling: keep these fields but don't enforce IP checks.
+      detected_ip: null,
+      allowed_ips: [],
+      ip_pass: null,
       verification_status: verificationStatus,
       verification_summary: notes.join(' '),
     },
@@ -323,7 +272,7 @@ const collectVerificationSnapshot = async () => {
       check_latitude: position.latitude,
       check_longitude: position.longitude,
       check_accuracy_meters: position.accuracy,
-      check_ip: ip.ip,
+      check_ip: null,
       verification_status: verificationStatus,
       verification_summary: notes.join(' '),
     },
@@ -534,7 +483,7 @@ export const api = {
     const verification = await collectVerificationSnapshot();
     if (!verification.hasConfiguredRules || !verification.isStrictMatch) {
       return {
-        error: verification.preview.verification_summary || 'GPS and IP verification must both match before time in.',
+        error: verification.preview.verification_summary || 'GPS verification must match before time in.',
       };
     }
     const payload = {
@@ -563,7 +512,7 @@ export const api = {
     const verification = await collectVerificationSnapshot();
     if (!verification.hasConfiguredRules || !verification.isStrictMatch) {
       return {
-        error: verification.preview.verification_summary || 'GPS and IP verification must both match before time out.',
+        error: verification.preview.verification_summary || 'GPS verification must match before time out.',
       };
     }
     const timeOut = new Date().toISOString();
