@@ -127,10 +127,25 @@ const computeHours = (timeIn: string, timeOut: string | null, entryType: 'regula
   }
 
   let breakOverlapMs = 0;
+  const breakStartOnStartDay = new Date(start.getFullYear(), start.getMonth(), start.getDate(), 12, 0, 0, 0);
+  const breakEndOnStartDay = new Date(start.getFullYear(), start.getMonth(), start.getDate(), 13, 0, 0, 0);
+  // If the student timed-in during the lunch break window, treat that window as working time.
+  const skipLunchOnStartDay = start.getTime() >= breakStartOnStartDay.getTime() && start.getTime() < breakEndOnStartDay.getTime();
+
   const cursor = new Date(start.getFullYear(), start.getMonth(), start.getDate());
   const lastDay = new Date(end.getFullYear(), end.getMonth(), end.getDate());
 
   while (cursor.getTime() <= lastDay.getTime()) {
+    if (
+      skipLunchOnStartDay &&
+      cursor.getFullYear() === start.getFullYear() &&
+      cursor.getMonth() === start.getMonth() &&
+      cursor.getDate() === start.getDate()
+    ) {
+      cursor.setDate(cursor.getDate() + 1);
+      continue;
+    }
+
     const breakStart = new Date(cursor.getFullYear(), cursor.getMonth(), cursor.getDate(), 12, 0, 0, 0);
     const breakEnd = new Date(cursor.getFullYear(), cursor.getMonth(), cursor.getDate(), 13, 0, 0, 0);
     const overlapStart = Math.max(start.getTime(), breakStart.getTime());
