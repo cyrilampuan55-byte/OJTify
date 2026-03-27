@@ -7,19 +7,18 @@ workflows:
       xcode: latest
       cocoapods: default
       node: 22
-      ios_signing:
-        # For TestFlight/App Store: app_store
-        # For third-party distribution (needs device UDIDs): ad_hoc
-        distribution_type: app_store
-        bundle_identifier: "com.ojtify.app"
       vars:
         # Capacitor app id (also used as Bundle ID).
         BUNDLE_ID: "com.ojtify.app"
         XCODE_PROJECT: "ios/App/App.xcodeproj"
         XCODE_SCHEME: "App"
       groups:
-        # Create this group in Codemagic UI and put your secrets there.
-        # See docs for required variables if you use the "fetch-signing-files" approach.
+        # Create this group in Codemagic UI and put your secrets there (mark as Secret).
+        # Required for automatic signing:
+        # - APP_STORE_CONNECT_KEY_IDENTIFIER
+        # - APP_STORE_CONNECT_ISSUER_ID
+        # - APP_STORE_CONNECT_PRIVATE_KEY
+        # - CERTIFICATE_PRIVATE_KEY
         - app_store_credentials
     scripts:
       - name: Install dependencies
@@ -31,11 +30,17 @@ workflows:
       - name: Sync Capacitor iOS
         script: |
           npx cap sync ios
-      # If you're using uploaded signing files + `ios_signing` above, the next step is enough.
-      # If you're using automatic signing via App Store Connect API keys, you can instead use:
-      #   keychain initialize
-      #   app-store-connect fetch-signing-files "$BUNDLE_ID" --type IOS_APP_STORE --create
-      #   keychain add-certificates
+      - name: Set up keychain
+        script: |
+          keychain initialize
+      - name: Fetch signing files (Automatic signing)
+        script: |
+          app-store-connect fetch-signing-files "$BUNDLE_ID" \
+            --type IOS_APP_STORE \
+            --create
+      - name: Add signing certificates to keychain
+        script: |
+          keychain add-certificates
       - name: Set up code signing on Xcode project
         script: |
           xcode-project use-profiles
