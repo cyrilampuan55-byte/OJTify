@@ -22,6 +22,29 @@ npm run dev:client
 
 This starts the Vite frontend on `http://localhost:8080`.
 
+## How to ask Codex efficiently (lean context)
+
+When requesting changes, share only the context needed for that task to reduce back-and-forth and speed up implementation.
+
+Use this template:
+
+```txt
+Task:
+Files in scope:
+Current behavior:
+Expected behavior:
+Constraints:
+Definition of done:
+```
+
+Project-specific tips:
+
+1. Include exact file paths when possible (`src/components/AppLayout.tsx`, `src/lib/api.ts`).
+2. Include exact error text if there is one.
+3. Mention whether the fix is for web, Android APK, iOS, or all.
+4. Add any Supabase/RLS constraints when relevant.
+5. Skip unrelated history so implementation stays focused.
+
 ## Supabase setup
 
 Before the app can log in, run the SQL schema in [supabase/schema.sql](/c:/Users/ABSOLUTE/Documents/OJTify/supabase/schema.sql) in the Supabase SQL editor.

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Clock, Play, Square, LogOut, Shield, TrendingUp, BarChart3, Calendar, BookOpen, ChevronLeft, ChevronRight, Plus, Trash2, X, AlertTriangle, ListFilter, Layers, Users, Activity, Search, Download, RefreshCw, Eye, EyeOff, Loader2, Lock, Mail, User, ArrowRight, Settings } from 'lucide-react';
+import { Clock, Play, Square, LogOut, Shield, TrendingUp, BarChart3, Calendar, BookOpen, ChevronLeft, ChevronRight, Plus, Trash2, X, AlertTriangle, ListFilter, Layers, Users, Activity, Search, Download, Eye, EyeOff, Loader2, Lock, Mail, User, ArrowRight, Settings } from 'lucide-react';
 import { api } from '@/lib/api';
 
 /* ─── helpers ─── */
@@ -700,7 +700,7 @@ function AdminDash() {
       </div>
       <div className="flex flex-col sm:flex-row gap-3">
         <div className="relative flex-1"><Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" /><input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search students..." className="w-full pl-10 pr-4 py-2.5 bg-[#0d1117] border border-slate-700/50 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500/50" /></div>
-        <div className="flex gap-2">{(['all','active','offline'] as const).map(s => <button key={s} onClick={() => setFilter(s)} className={`px-4 py-2.5 text-sm rounded-xl border capitalize transition-all ${filter===s?'bg-cyan-500/20 border-cyan-500/30 text-cyan-400':'border-slate-700/50 text-slate-400 hover:text-white'}`}>{s}</button>)}<button onClick={fetch} className="px-3 py-2.5 rounded-xl border border-slate-700/50 text-slate-400 hover:text-white"><RefreshCw className="w-4 h-4" /></button><button onClick={handleExport} className="px-4 py-2.5 text-sm rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 text-white font-medium flex items-center gap-2"><Download className="w-4 h-4" />Export</button></div>
+        <div className="flex gap-2">{(['all','active','offline'] as const).map(s => <button key={s} onClick={() => setFilter(s)} className={`px-4 py-2.5 text-sm rounded-xl border capitalize transition-all ${filter===s?'bg-cyan-500/20 border-cyan-500/30 text-cyan-400':'border-slate-700/50 text-slate-400 hover:text-white'}`}>{s}</button>)}<button onClick={handleExport} className="px-4 py-2.5 text-sm rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 text-white font-medium flex items-center gap-2"><Download className="w-4 h-4" />Export</button></div>
       </div>
       <div className="bg-[#111827]/80 border border-slate-700/40 rounded-2xl p-5"><h3 className="text-sm font-semibold text-slate-400 tracking-wider mb-4">LIVE MONITORING</h3><div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
         {filtered.map(u => (

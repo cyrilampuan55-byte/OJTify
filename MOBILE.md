@@ -37,3 +37,24 @@ npm run cap:ios
 ### Important
 
 An APK is Android-only. iOS uses an Xcode project / IPA, not an APK.
+
+## How to ask Codex efficiently (mobile lean context)
+
+Use this template for APK/IPA requests:
+
+```txt
+Task:
+Target platform: Android APK / iOS IPA / both
+Build type: debug / release
+Environment file used: .env.mobile / .env.local
+Current error (exact text):
+Definition of done:
+```
+
+Mobile-specific tips:
+
+1. Include whether this is a local build or Codemagic build.
+2. Share if the issue is build-time or runtime (for example: login connection error).
+3. Mention if GPS/location permission is required for the test case.
+4. For iOS IPA, include signing method (manual or automatic via App Store Connect).
+5. Include the expected output path if you want a specific artifact location.

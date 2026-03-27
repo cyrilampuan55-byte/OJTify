@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { api } from '@/lib/api';
-import { Users, Activity, Clock, TrendingUp, Search, Trash2, Download, Loader2, RefreshCw, ChevronDown, X, Eye } from 'lucide-react';
+import { Users, Activity, Clock, TrendingUp, Search, Trash2, Download, Loader2, ChevronDown, X, Eye } from 'lucide-react';
 
 interface AdminUser {
   id: string;
@@ -257,13 +257,6 @@ const AdminDashboard: React.FC = () => {
               {status}
             </button>
           ))}
-
-          <button
-            onClick={fetchUsers}
-            className="px-3 py-2.5 rounded-xl border border-slate-700/50 text-slate-400 hover:text-white transition-all"
-          >
-            <RefreshCw className="w-4 h-4" />
-          </button>
 
           <button
             onClick={handleExport}
