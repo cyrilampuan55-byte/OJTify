@@ -504,7 +504,32 @@ function AdminDash() {
   const selectedUserTotal = userLogs.reduce((sum: number, log: any) => sum + (log.total_hours || 0), 0);
   const fmtE = (st: string) => { const sec = Math.floor((now - new Date(st).getTime()) / 1000); return `${Math.floor(sec/3600).toString().padStart(2,'0')}:${Math.floor((sec%3600)/60).toString().padStart(2,'0')}:${(sec%60).toString().padStart(2,'0')}`; };
 
-  const handleExport = async () => { try { const d = await api.adminExport({}); if (d?.logs) { const csv = ['Name,Email,Date,Time In,Time Out,Hours,Entry Type', ...d.logs.map((l: any) => `"${l.profiles?.name||''}","${l.profiles?.email||''}","${new Date(l.time_in).toLocaleDateString()}","${new Date(l.time_in).toLocaleTimeString()}","${l.time_out?new Date(l.time_out).toLocaleTimeString():'Active'}","${(l.total_hours||0).toFixed(2)}","${l.entry_type||'regular'}"`)].join('\n'); const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([csv],{type:'text/csv'})); a.download = `ojt-report-${new Date().toISOString().split('T')[0]}.csv`; a.click(); } } catch {} };
+  const handleExport = async () => {
+    try {
+      const d = await api.adminExport({});
+      if (d?.logs) {
+        const esc = (v: any) => `"${String(v ?? '').replaceAll('"', '""')}"`;
+        const csv = [
+          'Name,Email,Date,Time In,Time Out,Hours,Entry Type,Description,Verification',
+          ...d.logs.map((l: any) => [
+            esc(l.profiles?.name || ''),
+            esc(l.profiles?.email || ''),
+            esc(new Date(l.time_in).toLocaleDateString()),
+            esc(new Date(l.time_in).toLocaleTimeString()),
+            esc(l.time_out ? new Date(l.time_out).toLocaleTimeString() : 'Active'),
+            esc((l.total_hours || 0).toFixed(2)),
+            esc(l.entry_type || 'regular'),
+            esc(l.description || ''),
+            esc(l.verification_status || ''),
+          ].join(',')),
+        ].join('\n');
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
+        a.download = `ojt-report-${new Date().toISOString().split('T')[0]}.csv`;
+        a.click();
+      }
+    } catch {}
+  };
   const handleExportUser = async (u: any) => {
     setExportingUserId(u.id);
     try {
