@@ -103,7 +103,6 @@ const computeHours = (timeIn, timeOut) => {
   while (cursor.getTime() <= lastDay.getTime()) {
     const breakWindows = [
       { startHour: 12, endHour: 13 }, // lunch break
-      { startHour: 18, endHour: 19 }, // dinner break
     ];
     breakWindows.forEach(({ startHour, endHour }) => {
       const breakStart = new Date(cursor.getFullYear(), cursor.getMonth(), cursor.getDate(), startHour, 0, 0, 0);
