@@ -127,14 +127,20 @@ const computeHours = (timeIn: string, timeOut: string | null, entryType: 'regula
   const lastDay = new Date(end.getFullYear(), end.getMonth(), end.getDate());
 
   while (cursor.getTime() <= lastDay.getTime()) {
-    const breakStart = new Date(cursor.getFullYear(), cursor.getMonth(), cursor.getDate(), 12, 0, 0, 0);
-    const breakEnd = new Date(cursor.getFullYear(), cursor.getMonth(), cursor.getDate(), 13, 0, 0, 0);
-    const overlapStart = Math.max(start.getTime(), breakStart.getTime());
-    const overlapEnd = Math.min(end.getTime(), breakEnd.getTime());
+    const breakWindows = [
+      { startHour: 12, endHour: 13 }, // lunch break
+      { startHour: 18, endHour: 19 }, // dinner break
+    ];
+    breakWindows.forEach(({ startHour, endHour }) => {
+      const breakStart = new Date(cursor.getFullYear(), cursor.getMonth(), cursor.getDate(), startHour, 0, 0, 0);
+      const breakEnd = new Date(cursor.getFullYear(), cursor.getMonth(), cursor.getDate(), endHour, 0, 0, 0);
+      const overlapStart = Math.max(start.getTime(), breakStart.getTime());
+      const overlapEnd = Math.min(end.getTime(), breakEnd.getTime());
 
-    if (overlapEnd > overlapStart) {
-      breakOverlapMs += overlapEnd - overlapStart;
-    }
+      if (overlapEnd > overlapStart) {
+        breakOverlapMs += overlapEnd - overlapStart;
+      }
+    });
 
     cursor.setDate(cursor.getDate() + 1);
   }
