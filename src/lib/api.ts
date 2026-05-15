@@ -71,7 +71,8 @@ const verificationConfig = {
 };
 
 const authRedirectUrl =
-  typeof window !== 'undefined' ? `${window.location.origin}/` : undefined;
+  import.meta.env.VITE_AUTH_REDIRECT_URL ||
+  (typeof window !== 'undefined' ? `${window.location.origin}/` : undefined);
 
 const setCompatToken = (token?: string | null) => {
   if (token) localStorage.setItem('ojt_token', token);
@@ -619,6 +620,69 @@ export const api = {
     const { error } = await supabase.auth.updateUser({ password: nextPassword });
     if (error) return { error: error.message };
     return { success: true, message: 'Password updated.' };
+  },
+
+  adminSendPasswordReset: async (userId: string) => {
+    const { profile } = await requireProfile();
+    if (profile.role !== 'admin') {
+      return { error: 'Only admins can send password reset links.' };
+    }
+
+    const { data: targetProfile, error: targetError } = await supabase
+      .from('profiles')
+      .select('id, email, role')
+      .eq('id', userId)
+      .single();
+
+    if (targetError || !targetProfile) {
+      return { error: targetError?.message || 'User not found.' };
+    }
+
+    if (targetProfile.role === 'admin') {
+      return { error: 'Use account settings to change admin password.' };
+    }
+
+    const { error } = await supabase.auth.resetPasswordForEmail(targetProfile.email, {
+      redirectTo: authRedirectUrl,
+    });
+    if (error) return { error: error.message };
+
+    return { success: true, message: `Password reset email sent to ${targetProfile.email}.` };
+  },
+
+  adminSetUserPassword: async (userId: string, password: string) => {
+    const { profile } = await requireProfile();
+    if (profile.role !== 'admin') {
+      return { error: 'Only admins can change user passwords.' };
+    }
+
+    const nextPassword = password.trim();
+    if (nextPassword.length < 6) {
+      return { error: 'Password must be at least 6 characters.' };
+    }
+
+    const { data, error } = await supabase.functions.invoke('admin-set-password', {
+      body: {
+        userId,
+        password: nextPassword,
+      },
+    });
+
+    if (error) {
+      const msg = String(error.message || '');
+      if (
+        msg.toLowerCase().includes('failed to fetch') ||
+        msg.toLowerCase().includes('failed to send a request')
+      ) {
+        return {
+          error:
+            'Cannot reach Edge Function "admin-set-password". Deploy the function and verify Supabase project secrets/config.',
+        };
+      }
+      return { error: msg };
+    }
+    if (data?.error) return { error: data.error };
+    return { success: true, message: data?.message || 'Password updated successfully.' };
   },
 
   getUserSettings: async (userId: string) => {

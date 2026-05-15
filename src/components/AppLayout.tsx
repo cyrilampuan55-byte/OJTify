@@ -485,6 +485,9 @@ function AdminDash() {
   const [showSettingsPanel, setShowSettingsPanel] = useState(false);
   const [showAddLogPanel, setShowAddLogPanel] = useState(false);
   const [exportingUserId, setExportingUserId] = useState<string | null>(null);
+  const [updatingPasswordUserId, setUpdatingPasswordUserId] = useState<string | null>(null);
+  const [adminNewPassword, setAdminNewPassword] = useState('');
+  const [adminConfirmPassword, setAdminConfirmPassword] = useState('');
 
   const fetch = useCallback(async () => { try { const d = await api.adminUsers(); if (d?.users) setUsers(d.users); } catch {} finally { setLoading(false); } }, []);
   useEffect(() => { fetch(); const i = setInterval(fetch, 15000); return () => clearInterval(i); }, [fetch]);
@@ -635,6 +638,36 @@ function AdminDash() {
       alert(e?.message || 'Failed to save settings');
     } finally {
       setSavingSettings(false);
+    }
+  };
+  const updateStudentPassword = async () => {
+    if (!selUser) return;
+    if (!adminNewPassword.trim()) {
+      alert('Please enter a new password.');
+      return;
+    }
+    if (adminNewPassword.length < 6) {
+      alert('Password must be at least 6 characters.');
+      return;
+    }
+    if (adminNewPassword !== adminConfirmPassword) {
+      alert('Password confirmation does not match.');
+      return;
+    }
+    setUpdatingPasswordUserId(selUser.id);
+    try {
+      const result = await api.adminSetUserPassword(selUser.id, adminNewPassword);
+      if (result?.error) {
+        alert(result.error);
+        return;
+      }
+      setAdminNewPassword('');
+      setAdminConfirmPassword('');
+      alert(result?.message || 'Password updated successfully.');
+    } catch (e: any) {
+      alert(e?.message || 'Failed to update password');
+    } finally {
+      setUpdatingPasswordUserId(null);
     }
   };
   const addManualLog = async () => {
@@ -821,6 +854,33 @@ function AdminDash() {
                           </button>
                         ))}
                       </div>
+                    </div>
+                    <div className="mt-4 border-t border-slate-700/30 pt-4">
+                      <label className="block text-xs text-slate-400 mb-2">Password Management</label>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
+                        <input
+                          type="password"
+                          value={adminNewPassword}
+                          onChange={e => setAdminNewPassword(e.target.value)}
+                          placeholder="New password"
+                          className="w-full px-3 py-2 bg-[#0d1117] border border-slate-700/50 rounded-lg text-white text-sm focus:outline-none focus:border-cyan-500/50"
+                        />
+                        <input
+                          type="password"
+                          value={adminConfirmPassword}
+                          onChange={e => setAdminConfirmPassword(e.target.value)}
+                          placeholder="Confirm password"
+                          className="w-full px-3 py-2 bg-[#0d1117] border border-slate-700/50 rounded-lg text-white text-sm focus:outline-none focus:border-cyan-500/50"
+                        />
+                      </div>
+                      <button
+                        onClick={updateStudentPassword}
+                        disabled={updatingPasswordUserId === selUser.id}
+                        className="w-full px-3 py-2 text-xs rounded-lg border border-amber-500/30 text-amber-300 hover:bg-amber-500/10 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                      >
+                        {updatingPasswordUserId === selUser.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
+                        {updatingPasswordUserId === selUser.id ? 'Updating Password...' : 'Update Password'}
+                      </button>
                     </div>
                   </div>
                 )}
