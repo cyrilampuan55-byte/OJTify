@@ -15,6 +15,8 @@ const PORT = Number(process.env.PORT || 3001);
 const HOST = process.env.HOST || '0.0.0.0';
 const isProduction = process.env.NODE_ENV === 'production';
 const DEFAULT_TARGET_HOURS = 600;
+const DAILY_REGULAR_HOURS_LIMIT = 8;
+const DAILY_AUTO_OVERTIME_THRESHOLD = 9;
 
 fs.mkdirSync(dataDir, { recursive: true });
 
@@ -103,6 +105,7 @@ const computeHours = (timeIn, timeOut) => {
   while (cursor.getTime() <= lastDay.getTime()) {
     const breakWindows = [
       { startHour: 12, endHour: 13 }, // lunch break
+      { startHour: 19, endHour: 20 }, // dinner break
     ];
     breakWindows.forEach(({ startHour, endHour }) => {
       const breakStart = new Date(cursor.getFullYear(), cursor.getMonth(), cursor.getDate(), startHour, 0, 0, 0);
@@ -120,6 +123,70 @@ const computeHours = (timeIn, timeOut) => {
 
   const workedMs = Math.max(diffMs - breakOverlapMs, 0);
   return Number((workedMs / 3_600_000).toFixed(2));
+};
+const dateKeyForLog = (timeIn) => {
+  const date = new Date(timeIn);
+  return [
+    date.getFullYear(),
+    String(date.getMonth() + 1).padStart(2, '0'),
+    String(date.getDate()).padStart(2, '0'),
+  ].join('-');
+};
+const normalizeDailyRegularAndOvertime = (logs) => {
+  const regularUsedByDay = new Map();
+  const regularTotalByDay = new Map();
+  const normalized = [];
+
+  logs.forEach((log) => {
+    const entryType = log.entry_type || 'regular';
+    if (!log.time_out || entryType === 'overtime') return;
+    const dayKey = dateKeyForLog(log.time_in);
+    const computedHours = computeHours(log.time_in, log.time_out);
+    regularTotalByDay.set(dayKey, (regularTotalByDay.get(dayKey) || 0) + computedHours);
+  });
+
+  logs
+    .map((log, index) => ({ log, index }))
+    .sort((a, b) => new Date(a.log.time_in).getTime() - new Date(b.log.time_in).getTime() || a.index - b.index)
+    .forEach(({ log }) => {
+      const entryType = log.entry_type || 'regular';
+      const computedHours = computeHours(log.time_in, log.time_out);
+
+      if (!log.time_out || entryType === 'overtime') {
+        normalized.push({ ...log, entry_type: entryType, total_hours: computedHours });
+        return;
+      }
+
+      const dayKey = dateKeyForLog(log.time_in);
+      const dailyRegularTotal = regularTotalByDay.get(dayKey) || 0;
+      if (dailyRegularTotal < DAILY_AUTO_OVERTIME_THRESHOLD) {
+        normalized.push({ ...log, entry_type: 'regular', total_hours: computedHours });
+        return;
+      }
+
+      const usedRegularHours = regularUsedByDay.get(dayKey) || 0;
+      const remainingRegularHours = Math.max(DAILY_REGULAR_HOURS_LIMIT - usedRegularHours, 0);
+      const regularHours = Math.min(computedHours, remainingRegularHours);
+      const overtimeHours = Math.max(computedHours - regularHours, 0);
+
+      if (regularHours > 0) {
+        normalized.push({ ...log, entry_type: 'regular', total_hours: Number(regularHours.toFixed(2)) });
+      }
+
+      if (overtimeHours > 0) {
+        normalized.push({
+          ...log,
+          id: `${log.id}-auto-overtime`,
+          entry_type: 'overtime',
+          description: log.description || 'Auto overtime from rendered hours',
+          total_hours: Number(overtimeHours.toFixed(2)),
+        });
+      }
+
+      regularUsedByDay.set(dayKey, usedRegularHours + regularHours);
+    });
+
+  return normalized.sort((a, b) => new Date(b.time_in).getTime() - new Date(a.time_in).getTime());
 };
 const startOfDay = (date) => new Date(date.getFullYear(), date.getMonth(), date.getDate());
 const startOfWeek = (date) => {
@@ -214,10 +281,10 @@ const getUserLogs = (userId) =>
   getLogsForUserStmt.get ? [] : [];
 
 const userLogs = (userId) =>
-  db
+  normalizeDailyRegularAndOvertime(db
     .prepare('SELECT * FROM logs WHERE user_id = ? ORDER BY time_in DESC')
     .all(userId)
-    .map((log) => ({ ...log, total_hours: computeHours(log.time_in, log.time_out) }));
+    .map((log) => ({ ...log, total_hours: computeHours(log.time_in, log.time_out) })));
 
 const activeLogForUser = (userId) => getActiveLogStmt.get(userId) ?? null;
 
@@ -598,14 +665,21 @@ app.delete('/api/admin/users/:id', requireAuth, requireAdmin, (req, res) => {
 
 app.get('/api/admin/export', requireAuth, requireAdmin, (req, res) => {
   const limit = Number(req.query.limit || 0);
-  let logs = getAllLogsStmt.all().map((log) => {
-    const profile = getUserById.get(log.user_id);
-    return {
-      ...log,
-      total_hours: computeHours(log.time_in, log.time_out),
-      profiles: profile ? { name: profile.name, email: profile.email } : null,
-    };
+  const logsByUser = new Map();
+  getAllLogsStmt.all().forEach((log) => {
+    if (!logsByUser.has(log.user_id)) logsByUser.set(log.user_id, []);
+    logsByUser.get(log.user_id).push(log);
   });
+  let logs = [...logsByUser.values()]
+    .flatMap((userLogsForExport) => normalizeDailyRegularAndOvertime(userLogsForExport))
+    .map((log) => {
+      const profile = getUserById.get(log.user_id);
+      return {
+        ...log,
+        profiles: profile ? { name: profile.name, email: profile.email } : null,
+      };
+    })
+    .sort((a, b) => new Date(b.time_in).getTime() - new Date(a.time_in).getTime());
   if (limit > 0) logs = logs.slice(0, limit);
   return res.json({ logs });
 });

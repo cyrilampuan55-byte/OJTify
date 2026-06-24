@@ -52,6 +52,8 @@ const DEFAULT_SETTINGS = {
 };
 
 const LOGS_BATCH_SIZE = 1000;
+const DAILY_REGULAR_HOURS_LIMIT = 8;
+const DAILY_AUTO_OVERTIME_THRESHOLD = 9;
 
 const VERIFICATION_STATUS = {
   VERIFIED: 'verified',
@@ -130,6 +132,7 @@ const computeHours = (timeIn: string, timeOut: string | null, entryType: 'regula
   while (cursor.getTime() <= lastDay.getTime()) {
     const breakWindows = [
       { startHour: 12, endHour: 13 }, // lunch break
+      { startHour: 19, endHour: 20 }, // dinner break
     ];
     breakWindows.forEach(({ startHour, endHour }) => {
       const breakStart = new Date(cursor.getFullYear(), cursor.getMonth(), cursor.getDate(), startHour, 0, 0, 0);
@@ -147,6 +150,72 @@ const computeHours = (timeIn: string, timeOut: string | null, entryType: 'regula
 
   const workedMs = Math.max(diffMs - breakOverlapMs, 0);
   return Number((workedMs / 3_600_000).toFixed(2));
+};
+
+const dateKeyForLog = (timeIn: string) => {
+  const date = new Date(timeIn);
+  return [
+    date.getFullYear(),
+    String(date.getMonth() + 1).padStart(2, '0'),
+    String(date.getDate()).padStart(2, '0'),
+  ].join('-');
+};
+
+const normalizeDailyRegularAndOvertime = <T extends LogRow>(logs: T[]) => {
+  const regularUsedByDay = new Map<string, number>();
+  const regularTotalByDay = new Map<string, number>();
+  const normalized: (T & { total_hours: number })[] = [];
+
+  logs.forEach((log) => {
+    const entryType = log.entry_type ?? 'regular';
+    if (!log.time_out || entryType === 'overtime') return;
+    const dayKey = dateKeyForLog(log.time_in);
+    const computedHours = computeHours(log.time_in, log.time_out, entryType);
+    regularTotalByDay.set(dayKey, (regularTotalByDay.get(dayKey) ?? 0) + computedHours);
+  });
+
+  [...logs]
+    .map((log, index) => ({ log, index }))
+    .sort((a, b) => new Date(a.log.time_in).getTime() - new Date(b.log.time_in).getTime() || a.index - b.index)
+    .forEach(({ log }) => {
+      const entryType = log.entry_type ?? 'regular';
+      const computedHours = computeHours(log.time_in, log.time_out, entryType);
+
+      if (!log.time_out || entryType === 'overtime') {
+        normalized.push({ ...log, entry_type: entryType, total_hours: computedHours });
+        return;
+      }
+
+      const dayKey = dateKeyForLog(log.time_in);
+      const dailyRegularTotal = regularTotalByDay.get(dayKey) ?? 0;
+      if (dailyRegularTotal < DAILY_AUTO_OVERTIME_THRESHOLD) {
+        normalized.push({ ...log, entry_type: 'regular', total_hours: computedHours });
+        return;
+      }
+
+      const usedRegularHours = regularUsedByDay.get(dayKey) ?? 0;
+      const remainingRegularHours = Math.max(DAILY_REGULAR_HOURS_LIMIT - usedRegularHours, 0);
+      const regularHours = Math.min(computedHours, remainingRegularHours);
+      const overtimeHours = Math.max(computedHours - regularHours, 0);
+
+      if (regularHours > 0) {
+        normalized.push({ ...log, entry_type: 'regular', total_hours: Number(regularHours.toFixed(2)) });
+      }
+
+      if (overtimeHours > 0) {
+        normalized.push({
+          ...log,
+          id: `${log.id}-auto-overtime`,
+          entry_type: 'overtime',
+          description: log.description || 'Auto overtime from rendered hours',
+          total_hours: Number(overtimeHours.toFixed(2)),
+        });
+      }
+
+      regularUsedByDay.set(dayKey, usedRegularHours + regularHours);
+    });
+
+  return normalized.sort((a, b) => new Date(b.time_in).getTime() - new Date(a.time_in).getTime());
 };
 
 const getCurrentPosition = async () => {
@@ -284,7 +353,7 @@ const weekKeyForDate = (date: Date) => {
 };
 
 const userStatsFromLogs = (logs: LogRow[]) => {
-  const completed = logs.filter((log) => log.time_out);
+  const completed = normalizeDailyRegularAndOvertime(logs).filter((log) => log.time_out);
   const now = new Date();
   const dayStart = startOfDay(now).getTime();
   const weekStart = startOfWeek(now).getTime();
@@ -297,7 +366,7 @@ const userStatsFromLogs = (logs: LogRow[]) => {
 
   completed.forEach((log) => {
     const stamp = new Date(log.time_in).getTime();
-    const hours = computeHours(log.time_in, log.time_out, log.entry_type ?? 'regular');
+    const hours = log.total_hours || 0;
     total += hours;
     if (stamp >= dayStart) today += hours;
     if (stamp >= weekStart) week += hours;
@@ -314,10 +383,16 @@ const userStatsFromLogs = (logs: LogRow[]) => {
 };
 
 const withComputedHours = <T extends LogRow>(logs: T[]) =>
-  logs.map((log) => ({
-    ...log,
-    total_hours: computeHours(log.time_in, log.time_out, log.entry_type ?? 'regular'),
-  }));
+  Array.from(
+    logs.reduce((groups, log) => {
+      const group = groups.get(log.user_id) ?? [];
+      group.push(log);
+      groups.set(log.user_id, group);
+      return groups;
+    }, new Map<string, T[]>()),
+  )
+    .flatMap(([, userLogs]) => normalizeDailyRegularAndOvertime(userLogs))
+    .sort((a, b) => new Date(b.time_in).getTime() - new Date(a.time_in).getTime());
 
 const getLogsForUser = async (userId: string, limit?: number) => {
   const logs: LogRow[] = [];
@@ -411,8 +486,8 @@ const syncNotificationsForProfile = async (profile: ProfileRow) => {
   }
 
   const weekStart = startOfWeek(new Date()).getTime();
-  const weekLogs = logs.filter((log) => log.time_out && new Date(log.time_in).getTime() >= weekStart);
-  const weekHours = weekLogs.reduce((sum, log) => sum + computeHours(log.time_in, log.time_out, log.entry_type ?? 'regular'), 0);
+  const weekLogs = normalizeDailyRegularAndOvertime(logs).filter((log) => log.time_out && new Date(log.time_in).getTime() >= weekStart);
+  const weekHours = weekLogs.reduce((sum, log) => sum + (log.total_hours || 0), 0);
   await ensureNotification(
     profile.id,
     'weekly_summary',
