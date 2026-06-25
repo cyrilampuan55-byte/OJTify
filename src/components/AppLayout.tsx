@@ -39,6 +39,38 @@ const logPrimaryText = (log: LogT) => {
   return `${new Date(log.time_in).toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'})}${log.time_out ? ` - ${new Date(log.time_out).toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'})}` : ''}`;
 };
 
+const statsFromLogs = (logs: LogT[]): StatsT => {
+  const completed = logs.filter(log => log.time_out);
+  const now = new Date();
+  const dayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const weekStartDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  weekStartDate.setDate(weekStartDate.getDate() - ((weekStartDate.getDay() + 6) % 7));
+  const weekStart = weekStartDate.getTime();
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+
+  const totals = completed.reduce(
+    (stats, log) => {
+      const stamp = new Date(log.time_in).getTime();
+      const hours = log.total_hours || 0;
+      stats.total += hours;
+      if (stamp >= dayStart) stats.today += hours;
+      if (stamp >= weekStart) stats.week += hours;
+      if (stamp >= monthStart) stats.month += hours;
+      stats.days.add(new Date(log.time_in).toDateString());
+      return stats;
+    },
+    { today: 0, week: 0, month: 0, total: 0, days: new Set<string>() },
+  );
+
+  return {
+    today: Number(totals.today.toFixed(2)),
+    week: Number(totals.week.toFixed(2)),
+    month: Number(totals.month.toFixed(2)),
+    total: Number(totals.total.toFixed(2)),
+    daysWorked: totals.days.size,
+  };
+};
+
 /* ═══════════════════════════════════════════════════════════════════
    LOGIN PAGE
    ═══════════════════════════════════════════════════════════════════ */
@@ -568,11 +600,12 @@ function AdminDash() {
     setInsUser(u);
     setInsLoading(true);
     try {
-      const [statsData, settingsData] = await Promise.all([
+      const [statsData, settingsData, logsData] = await Promise.all([
         api.stats(u.id),
         api.getUserSettings(u.id),
+        api.logs({ userId: u.id }),
       ]);
-      setInsStats(statsData || { today: 0, week: 0, month: 0, total: 0, daysWorked: 0 });
+      setInsStats(logsData?.logs ? statsFromLogs(logsData.logs) : statsData || { today: 0, week: 0, month: 0, total: 0, daysWorked: 0 });
       setInsSettings(settingsData?.settings || { excluded_days: ['Sun'], target_end_date: null, target_hours: u.target_hours || 600 });
     } catch {
       setInsStats({ today: 0, week: 0, month: 0, total: 0, daysWorked: 0 });
@@ -999,8 +1032,9 @@ const AppLayout: React.FC = () => {
   const fetchData = useCallback(async () => {
     if (!user) return;
     try {
-      const [s, l] = await Promise.all([api.stats(), api.logs({ limit: 100 })]);
-      if (s) setStats(s);
+      const [s, l] = await Promise.all([api.stats(), api.logs({})]);
+      if (l?.logs) setStats(statsFromLogs(l.logs));
+      else if (s) setStats(s);
       if (l?.logs) setLogs(l.logs);
     } catch {}
   }, [user]);

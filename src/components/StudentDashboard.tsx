@@ -22,6 +22,38 @@ interface TimeLog {
   total_hours: number;
 }
 
+const statsFromLogs = (logs: TimeLog[]): Stats => {
+  const completed = logs.filter(log => log.time_out);
+  const now = new Date();
+  const dayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const weekStartDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  weekStartDate.setDate(weekStartDate.getDate() - ((weekStartDate.getDay() + 6) % 7));
+  const weekStart = weekStartDate.getTime();
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+
+  const totals = completed.reduce(
+    (stats, log) => {
+      const stamp = new Date(log.time_in).getTime();
+      const hours = log.total_hours || 0;
+      stats.total += hours;
+      if (stamp >= dayStart) stats.today += hours;
+      if (stamp >= weekStart) stats.week += hours;
+      if (stamp >= monthStart) stats.month += hours;
+      stats.days.add(new Date(log.time_in).toDateString());
+      return stats;
+    },
+    { today: 0, week: 0, month: 0, total: 0, days: new Set<string>() },
+  );
+
+  return {
+    today: Number(totals.today.toFixed(2)),
+    week: Number(totals.week.toFixed(2)),
+    month: Number(totals.month.toFixed(2)),
+    total: Number(totals.total.toFixed(2)),
+    daysWorked: totals.days.size,
+  };
+};
+
 const StudentDashboard: React.FC = () => {
   const [stats, setStats] = useState<Stats>({ today: 0, week: 0, month: 0, total: 0, daysWorked: 0 });
   const [logs, setLogs] = useState<TimeLog[]>([]);
@@ -31,9 +63,10 @@ const StudentDashboard: React.FC = () => {
     try {
       const [statsData, logsData] = await Promise.all([
         api.getStats(),
-        api.getLogs({ limit: 100 }),
+        api.getLogs({}),
       ]);
-      if (statsData) setStats(statsData);
+      if (logsData?.logs) setStats(statsFromLogs(logsData.logs));
+      else if (statsData) setStats(statsData);
       if (logsData?.logs) setLogs(logsData.logs);
     } catch (err) {
       console.error('Failed to fetch data:', err);
